@@ -580,6 +580,19 @@ class TestFindVectorsWiring:
         assert standin_steps == []
         np.testing.assert_allclose(peaks[:, :2], truth[0] + 0.8, atol=1e-5)
 
+    def test_a_declined_disk_has_no_sigma_rather_than_the_counting_noise_one(
+            self, standin_detector, monkeypatch):
+        """The counting-noise limit is tens of times smaller than a centre
+        network's sigma; carried into a frame the network placed, the disk it
+        declined would outweigh every other in the strain fit."""
+        steps = {CENTRE_MODEL: _ShiftRefiner(F5_SHIFT, declined={0}, sigma=0.05)}
+        monkeypatch.setattr(centre_refine, "load_step", lambda model_id, device=None: steps[model_id])
+        stack, truth = _scan(np.random.default_rng(12), frames=1)
+        _register(standin_detector, stack, truth)
+        peaks = _preview(stack[0], refine_centres=True, friedel_partner=False)
+        assert np.isnan(peaks[0, 4])
+        np.testing.assert_allclose(peaks[1:, 4], 0.05)
+
     @pytest.mark.parametrize("batched", [True, False])
     def test_batch_and_preview_place_every_disk_identically(self, standin_detector, monkeypatch,
                                                             batched):

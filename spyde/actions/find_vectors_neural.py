@@ -121,8 +121,11 @@ def _neural_peaks(frame: np.ndarray, pred: np.ndarray, counts_radius: float,
     """The model's ``(N, 4) [y, x, score, width]`` -> the stored peak record
     ``(N, PEAK_COLS) [y, x, intensity, confidence, sigma]``. One function for the
     batch and the single-frame preview, so both give identical columns.
-    ``refined_sigma`` is a centre refiner's own uncertainty; where it is finite
-    it replaces the counting-noise estimate."""
+    ``refined_sigma`` is the centre steps' own uncertainty (NaN for a disk they
+    left where it was); when they ran it is the sigma column, else the
+    counting-noise limit is. The two are never mixed in one frame: the
+    counting-noise limit is tens of times smaller, so a disk the steps declined
+    would otherwise outweigh every disk they placed."""
     from spyde.actions.find_vectors import PEAK_COLS, _disk_mean_intensity
     from spyde.models.centre import positional_sigma
 
@@ -131,10 +134,10 @@ def _neural_peaks(frame: np.ndarray, pred: np.ndarray, counts_radius: float,
     f = np.asarray(frame, np.float32)
     pos = pred[:, :2]
     intensity = _disk_mean_intensity(f, pos[:, 0], pos[:, 1], _INTENSITY_RADIUS)
-    signal, background = _disk_counts(f, pos, counts_radius)
-    sigma = positional_sigma(pred[:, 3], signal, background)
     if refined_sigma is not None:
-        sigma = np.where(np.isfinite(refined_sigma), refined_sigma, sigma)
+        sigma = refined_sigma
+    else:
+        sigma = positional_sigma(pred[:, 3], *_disk_counts(f, pos, counts_radius))
     return np.column_stack([pos, intensity, pred[:, 2], sigma]).astype(np.float32)
 
 

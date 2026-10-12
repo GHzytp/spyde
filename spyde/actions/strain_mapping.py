@@ -208,12 +208,13 @@ def vector_weights(rows: np.ndarray, unit_per_pixel: float = 1.0):
     sigma Find Vectors records: ``confidence / (sigma² + floor²)``, where the
     floor is WEIGHT_FLOOR_PX converted to reciprocal units.
 
-    The floor is there because sigma is the photon-noise limit only — on a
-    bright disk it is ~0.01 px while the centre actually scatters by tenths of a
-    pixel — so without it a few bright disks would carry the whole fit. A row
-    with no confidence or sigma (vectors from an older file, a method other
-    than the network, or columns left at zero) gets the median weight. ``None`` when no row has them, so
-    such vectors fit exactly as before."""
+    Sigma is the centre network's estimate when Find Vectors refined the
+    centres, else the counting-noise limit, which on a bright disk is ~0.01 px
+    while the centre actually scatters by tenths of a pixel; the floor stops a
+    few such disks carrying the whole fit. A row with no confidence or sigma
+    (vectors from an older file, a method other than the network, a disk the
+    centre network declined, or columns left at zero) gets the median weight.
+    ``None`` when no row has them, so such vectors fit exactly as before."""
     from spyde.signals.diffraction_vectors import COL_CONFIDENCE, COL_SIGMA
 
     rows = np.asarray(rows)
