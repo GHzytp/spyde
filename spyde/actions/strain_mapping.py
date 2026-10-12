@@ -189,7 +189,7 @@ _TRIM_SIGMA = 2.5
 _TRIM_FLOOR = 1e-6
 
 
-# The part of a centre's scatter (px) that photon counting does not see.
+# The part of a centre's scatter (px) that electron counting statistics do not account for.
 WEIGHT_FLOOR_PX = 0.1
 
 
