@@ -335,8 +335,9 @@ class TestFriedelStep:
         from spyde.models import centre_network, registry
 
         for model_id, channels in ((CENTRE_MODEL, 1), (FRIEDEL_MODEL, 2)):
+            # The bundled checkpoints hold CUDA tensors; a CPU-only runner must map them.
             state = torch.load(registry._resolve_weights(registry._entry(model_id)),
-                               weights_only=True)["state_dict"]
+                               map_location="cpu", weights_only=True)["state_dict"]
             assert centre_network.input_channels(state) == channels
         path = tmp_path / "two_channels.pt"
         torch.save({"state_dict": centre_network.FastCentreNet(4, 2, channels=2).state_dict(),
