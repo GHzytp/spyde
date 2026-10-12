@@ -1,0 +1,1 @@
+Find Vectors' neural detector could be taught on your own data — double-click a wrong circle or a missed disk and a copy of the model is refitted on your marks, which you can name and reuse on other datasets — and the Model dropdown showed each model's icon, with the built-in models first and yours after a divider.

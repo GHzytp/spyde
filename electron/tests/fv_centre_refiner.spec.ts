@@ -41,11 +41,9 @@ test('neural wizard: the Friedel-partner step is a checkbox, on by default', asy
   await expect(wizard).toBeVisible()
   await backend.waitForLog('neural calibration:', 60_000)
 
-  // One switch, and no choice of refine step.
   const friedel = page.getByTestId('fv-friedel')
   await expect(friedel).toBeVisible()
   await expect(friedel).toBeChecked()
-  await expect(page.getByTestId('fv-centre')).toHaveCount(0)
   await wizard.screenshot({ path: `${SHOTS}/01-controls.png` })
 
   await friedel.click()

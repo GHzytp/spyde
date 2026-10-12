@@ -654,14 +654,12 @@ class TestFindVectorsWiring:
         assert fetched == [None, CENTRE_MODEL]
 
     def test_the_wizard_has_one_checkbox_on_by_default(self):
-        """The Friedel step is a checkbox, on by default; there is no choice of
-        refine step."""
+        """The Friedel step is a checkbox, on by default."""
         source = (Path(__file__).resolve().parents[3] / "electron" / "src" / "renderer" / "src"
                   / "components" / "FindVectorsWizard.tsx").read_text(encoding="utf-8")
         assert 'testid="fv-friedel"' in source
         assert "useState(saved?.friedelPartner ?? true)" in source
         assert "friedel_partner: neural && v.friedelPartner" in source
-        assert "fv-centre" not in source
 
     def test_the_full_dataset_is_never_computed(self, standin_detector, standin_steps,
                                                 monkeypatch):

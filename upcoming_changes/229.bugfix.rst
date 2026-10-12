@@ -1,0 +1,1 @@
+Find Vectors' neural detector placed spots up to 0.6 % too close to the pattern's top-left corner (up to 0.7 px at the far edge), which biased absolute, CIF-referenced strain by the same amount.

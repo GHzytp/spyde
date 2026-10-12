@@ -1,0 +1,1 @@
+A new detector, "dynamical-mask8", was offered in Find Vectors → Model: it places each disk at the centre of its aperture rather than where the intensity sits inside it, halving the centre error on dynamically filled disks and no longer flooding sparse counted frames with false detections.
