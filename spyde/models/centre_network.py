@@ -49,6 +49,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .centre import coverage_centroid
 from .centre_refine import DEFAULT_MIN_SPOT_RADIUS, MAX_SHIFT_FRACTION
 
 DEFAULT_CROP_RADIUS = 10.0
@@ -188,22 +189,13 @@ class NetworkRefiner:
         level = (flat[:, disk].mean(1) - background).abs().clamp_min(1e-3)
         return ((flat - background[:, None]) / level[:, None]).reshape_as(sampled).clamp(-4, 8)
 
-    def _coverage_centroid(self, logits, iterations=2):
-        coverage = torch.sigmoid(logits[:, 0])
+    def _coverage_centroid(self, logits):
+        """The coverage map's centroid, as an offset from the window centre."""
         offsets = self._offsets()
-        rows, columns = offsets[None, :, None], offsets[None, None, :]
-        centre_y = torch.zeros(coverage.shape[0], device=coverage.device)
-        centre_x = torch.zeros_like(centre_y)
-        window = torch.full_like(centre_y, 1.3 * self.crop_radius + 1.5)
-        area = torch.zeros_like(centre_y)
-        for _ in range(iterations):
-            distance = torch.sqrt((rows - centre_y[:, None, None]) ** 2
-                                  + (columns - centre_x[:, None, None]) ** 2)
-            weight = (window[:, None, None] - distance + 0.5).clamp(0, 1) * coverage
-            area = weight.sum((1, 2)).clamp_min(1e-3)
-            centre_y = (weight * rows).sum((1, 2)) / area
-            centre_x = (weight * columns).sum((1, 2)) / area
-            window = torch.sqrt(area / math.pi) + 2.0
+        start = torch.zeros(logits.shape[0], device=logits.device)
+        centre_y, centre_x, area = coverage_centroid(
+            torch.sigmoid(logits[:, 0]), offsets[None, :, None], offsets[None, None, :],
+            start, start.clone(), self.crop_radius)
         return torch.stack([centre_y, centre_x], 1), area
 
     def _pass(self, crops, centre, step, partner=None):

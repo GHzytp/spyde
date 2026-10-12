@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from scipy.ndimage import gaussian_filter
 
-from spyde.models import decode as D
+from spyde.models import centre as C
 from spyde.models import preprocess as P
 from spyde.models import preprocess_torch as PT
 from spyde.models.unet import SpotUNet
@@ -64,7 +64,7 @@ class TestMaskCentroidDecode:
             logits = _coverage_logits(shape, centre, 4.5)
             seed_y = torch.tensor([round(centre[0]) + 0.8])
             seed_x = torch.tensor([round(centre[1]) - 0.6])
-            y, x, area = D.mask_centroid(logits, torch.tensor([0]), seed_y, seed_x, 4.5)
+            y, x, area = C.mask_centroid(logits, torch.tensor([0]), seed_y, seed_x, 4.5)
             assert abs(float(y) - centre[0]) < 0.02 and abs(float(x) - centre[1]) < 0.02
             assert abs(float(area) - np.pi * 4.5 ** 2) < 3.0
 
@@ -77,13 +77,14 @@ class TestMaskCentroidDecode:
         offsets = torch.zeros((1, 2) + shape)
         mask = _coverage_logits(shape, centre, 4.5)
         mask[0, 0, :20, :20] = -10.0
-        peaks = D.decode_batch(heatmap, offsets, thresh=0.3, min_distance=2, mask_logits=mask, radius=4.5)
+        peaks = C.decode_batch_centres(heatmap, offsets, thresh=0.3, min_distance=2,
+                                       mask_logits=mask, mask_radius=4.5).numpy()
         peaks = peaks[np.argsort(peaks[:, 1])]
         assert np.allclose(peaks[0, 1:3], (12.0, 12.0))                  # offset head kept
         assert np.allclose(peaks[1, 1:3], centre, atol=0.02)             # mask centroid
-        single = D.decode(heatmap[0], offsets[0], thresh=0.3, min_distance=2, mask_logits=mask[0], radius=4.5)
-        single = single[np.argsort(single[:, 0])]
-        assert np.allclose(single[:, :2], peaks[:, 1:3], atol=1e-4)
+        without = C.decode_batch_centres(heatmap, offsets, thresh=0.3, min_distance=2).numpy()
+        without = without[np.argsort(without[:, 1])]
+        assert np.allclose(without[:, 1:3], ((12.0, 12.0), (30.0, 34.0)))  # the offset head
 
 
 class TestSpotUNetHeads:

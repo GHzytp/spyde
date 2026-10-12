@@ -1,8 +1,7 @@
 """Every diffraction vector carries a positional confidence and uncertainty.
 
 The neural method records each disk's heatmap peak (``confidence``) and the
-centre's standard deviation (``sigma``); ``spyde.models.centre`` also offers
-the soft-argmax of the heatmap as an opt-in centre. Vectors are
+centre's standard deviation (``sigma``). Vectors are
 ``(nav_x, nav_y, kx, ky, time, intensity, confidence, sigma)``; buffers and
 files written with the first six columns load with the last two NaN.
 
@@ -66,21 +65,7 @@ _DRIVER = textwrap.dedent(r"""
     def run_mode(mode):
         from spyde import models
         out = {}
-        if mode == "dynamical":
-            frames, truth = dynamical_frames()
-            model, dev = models.get_cpu_model(None)
-            for centre in ("softargmax", "offset"):
-                errs = []
-                for f, t in zip(frames, truth):
-                    p = np.asarray(models.detect(model, f, dev, thresh=0.3, spot_diameter=12.0,
-                                                 centre=centre)).reshape(-1, 3)
-                    d = np.hypot(p[:, None, 0] - t[None, :, 0], p[:, None, 1] - t[None, :, 1])
-                    j = d.argmin(0)
-                    ok = d[j, np.arange(len(t))] < 4
-                    errs.append(d[j, np.arange(len(t))][ok])
-                e = np.concatenate(errs)
-                out[centre] = dict(n=int(len(e)), rms=float(np.sqrt(np.mean(e ** 2))))
-        elif mode == "columns":
+        if mode == "columns":
             from spyde.actions.find_vectors_neural import _find_vectors_single_frame_neural
             frames, truth = dynamical_frames(n=2)
             _, _, peaks = _find_vectors_single_frame_neural(frames[0], 0.3, 4, spot_radius=6.0)
@@ -140,7 +125,7 @@ _DRIVER = textwrap.dedent(r"""
 
 @pytest.fixture(scope="module")
 def neural_results():
-    proc = subprocess.run([sys.executable, "-c", _DRIVER, "dynamical", "columns", "parity", "gpu_parity"],
+    proc = subprocess.run([sys.executable, "-c", _DRIVER, "columns", "parity", "gpu_parity"],
                           capture_output=True, text=True, timeout=900)
     out = {}
     for line in proc.stdout.splitlines():
@@ -153,17 +138,6 @@ def neural_results():
 
 
 class TestNeuralCentres:
-    def test_softargmax_beats_the_decoded_position_under_dynamical_fill(self, neural_results):
-        """On disks whose fill is uneven and points a different way in every
-        frame (40 frames, 839 matched disks, seed 0): the opt-in soft-argmax is
-        0.33 px RMS from the true outline centre, the default decode (argmax
-        pixel + offset head) 0.37 px. (On real SPED-Ag the soft-argmax carries a
-        ~0.7 % radial bias, which is why it is not the default.)"""
-        r = neural_results["dynamical"]
-        assert r["softargmax"]["n"] == r["offset"]["n"] > 500
-        assert r["softargmax"]["rms"] < r["offset"]["rms"]
-        assert r["softargmax"]["rms"] < 0.36
-
     def test_every_neural_peak_has_confidence_and_sigma(self, neural_results):
         r = neural_results["columns"]
         assert r["shape"][1] == 5

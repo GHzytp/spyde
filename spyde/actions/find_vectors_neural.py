@@ -11,8 +11,7 @@ stores: ``[y, x, intensity, confidence, sigma]`` — the raw disk-mean frame
 intensity, the network's heatmap peak, and the centre's positional uncertainty
 (:func:`spyde.models.centre.positional_sigma`).
 
-Centres are the network's decode (argmax pixel + offset head);
-``centre="softargmax"`` is the opt-in alternative in :mod:`spyde.models.centre`.
+Centres are the network's decode (:mod:`spyde.models.centre`).
 ``refine_centres`` re-places every detected disk on the raw frame at native
 resolution, and ``friedel_partner`` adds a second step on top that also looks at
 each disk's Friedel mirror (:mod:`spyde.models.centre_refine`). The batch and the
@@ -203,7 +202,6 @@ def _find_vectors_single_frame_neural(
                                        # None → auto (12, size-scaled for big disks).
     spot_radius: Optional[float] = None,   # user Spot-size (px radius) override for
                                            # the canonical rescale; None → auto.
-    centre: str = "offset",                # "softargmax": see spyde.models.centre
     refine_centres: bool = False,          # the centre steps; see _refined
     friedel_partner: bool = False,
 ):
@@ -229,7 +227,7 @@ def _find_vectors_single_frame_neural(
                              min_distance=int(min_distance),
                              bg_sigma=(float(bg_sigma) if bg_sigma is not None else None),
                              spot_diameter=(2.0 * spot_radius) if spot_radius else None,
-                             centre=centre, with_width=True)
+                             with_width=True)
     pred = np.asarray(pred, dtype=np.float32).reshape(-1, 4)
     pred = _apply_beamstop(pred, beamstop_mask, f.shape)
     if pred.size == 0:
@@ -349,7 +347,7 @@ def _mps_forward_lock():
 
 
 def _neural_block(b4d, threshold, min_dist, subpixel, beamstop_mask, model_id,
-                  bg_sigma=None, persistence=False, spot_radius=None, centre="offset",
+                  bg_sigma=None, persistence=False, spot_radius=None,
                   refine_centres=False, friedel_partner=False):
     """Run the neural detector on a (ny, nx, KY, KX) block → NaN-padded
     (ny, nx, MAX_PEAKS, PEAK_COLS). Batches the whole block through the torch GPU when
@@ -436,7 +434,7 @@ def _neural_block(b4d, threshold, min_dist, subpixel, beamstop_mask, model_id,
                         min_distance=int(min_dist),
                         bg_sigma=(float(bg_sigma) if bg_sigma is not None else None),
                         spot_diameter=(2.0 * spot_radius) if spot_radius else None,
-                        centre=centre, with_width=True)
+                        with_width=True)
             counts_radius = _counts_radius(flat[0], spot_radius)
             preds = [_apply_beamstop(np.asarray(p, np.float32).reshape(-1, 4),
                                      beamstop_mask, flat[i].shape)
@@ -454,7 +452,7 @@ def _neural_block(b4d, threshold, min_dist, subpixel, beamstop_mask, model_id,
             _find_vectors_single_frame_neural(
                 frame, threshold, min_dist, subpixel=subpixel,
                 beamstop_mask=beamstop_mask, model_id=model_id, bg_sigma=bg_sigma,
-                spot_radius=spot_radius, centre=centre,
+                spot_radius=spot_radius,
                 refine_centres=refine_centres, friedel_partner=friedel_partner)[2]
             for frame in flat
         ]
@@ -516,7 +514,7 @@ def _find_vectors_chunk_neural(
             out[t] = _neural_block(blurred[t], threshold, min_dist, subpixel,
                                    beamstop_mask, model_id, bg_sigma, persistence,
                                    spot_radius, refine_centres=refine_centres,
-                               friedel_partner=friedel_partner)
+                                   friedel_partner=friedel_partner)
         result = out
     if refine_padded:
         result = trim_ghost(result, depth_px, nav_dim)

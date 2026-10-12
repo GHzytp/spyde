@@ -4,7 +4,7 @@
 project (``yolodiffraction/model/infer.py``), rewired to import from the sibling
 modules in this package. ``detect_batch`` is new to SpyDE: it runs a whole stack
 of frames through one forward pass (the batched path the 4D-STEM chunk compute
-needs), reusing the GPU-resident ``decode_batch``.
+needs), decoding GPU-resident (``centre.decode_batch_centres``).
 
 The full single-frame pipeline a user runs needs no parameters: disk size is
 estimated automatically and the frame rescaled to the canonical size before the
@@ -19,7 +19,7 @@ import sys
 import numpy as np
 import torch
 
-from .centre import CENTRE_OFFSET, decode_batch_centres
+from .centre import decode_batch_centres
 from .preprocess import CANONICAL_DIAMETER, estimate_disk_diameter, normalize_input, scale_to_canonical
 from .unet import SpotUNet
 
@@ -260,9 +260,10 @@ def _to_frame_coordinates(peaks: np.ndarray, frame_shape, factor: float) -> np.n
     return peaks
 
 
-def _centre_radius(work_diam: float, md: int) -> float:
-    """Soft-argmax window (working px): the disk's radius, but never past the
-    NMS distance, so a neighbouring disk's response is not averaged in."""
+def _width_radius(work_diam: float, md: int) -> float:
+    """Window the response width is taken over (working px): the disk's radius,
+    but never past the NMS distance, so a neighbouring disk's response is not
+    averaged in."""
     r = 0.5 * float(work_diam) if np.isfinite(work_diam) and work_diam > 0 else float(md)
     return float(max(1.5, min(r, md)))
 
@@ -286,15 +287,9 @@ def detect(model, frame: np.ndarray, device, thresh: float = 0.3,
            min_distance: int = 4, auto_scale: bool = True,
            bg_sigma: float | None = None,
            spot_diameter: float | None = None,
-           centre: str = CENTRE_OFFSET,
            with_width: bool = False):
     """Detect spots in a single frame. Returns (N,3) [y,x,score] in ORIGINAL coords
     (``with_width``: (N,4) [y,x,score,width], width in original pixels).
-
-    ``centre`` picks where a found disk is placed: ``"offset"`` (default) — the
-    network's decode, argmax pixel + offset head; or ``"softargmax"`` — the
-    softmax-weighted mean of the heatmap over the disk, see :mod:`.centre` for
-    why it is not the default. The set of disks found is the same either way.
 
     Estimates disk size, rescales to canonical, runs the model, maps positions back.
     ``bg_sigma`` is the local-norm high-pass scale (set by ``calibrate`` for diffuse
@@ -317,7 +312,7 @@ def detect(model, frame: np.ndarray, device, thresh: float = 0.3,
     x = torch.from_numpy(nrm[None, None]).to(device)
     outputs = model(x)
     res = decode_batch_centres(outputs[0], outputs[1], thresh=thresh, min_distance=md,
-                               radius=_centre_radius(work_diam, md), centre=centre,
+                               radius=_width_radius(work_diam, md),
                                mask_logits=outputs[2] if len(outputs) > 2 else None,
                                mask_radius=_mask_radius(work_diam))
     return _frame_rows(res, frame.shape, factor, with_width)
@@ -426,17 +421,16 @@ def detect_batch(model, frames, device, thresh: float = 0.3,
                  min_distance: int = 4, auto_scale: bool = True,
                  shared_scale: bool = True, bg_sigma: float | None = None,
                  spot_diameter: float | None = None,
-                 centre: str = CENTRE_OFFSET,
                  with_width: bool = False):
     """Detect spots in a STACK of frames in one forward pass.
 
-    ``centre`` and ``with_width`` as in :func:`detect` — the same placement, so the
-    batch and the single-frame preview give the same centres.
+    ``with_width`` as in :func:`detect`; the decode is the same, so the batch and
+    the single-frame preview give the same centres.
 
     ``frames`` is an (N,H,W) array (or a sequence of (H,W) arrays). Returns a list
     of N (Ni,3) [y,x,score] arrays in ORIGINAL frame coordinates — the same per-frame
     contract as ``detect``, but the model runs once on the whole batch and decoding
-    stays GPU-resident (``decode_batch``).
+    stays GPU-resident (``centre.decode_batch_centres``).
 
     All frames in a scan share the same physical disk size, so ``shared_scale``
     (default) estimates the scale factor ONCE from the first frame and applies it
@@ -474,7 +468,7 @@ def detect_batch(model, frames, device, thresh: float = 0.3,
     md = max(2, int(round(min_distance * factor)))
     work_diam = _estimate_work_diam(frames[0], factor, spot_diameter)
     md, bg_sigma = _big_disk_params(md, bg_sigma, work_diam)
-    radius = _centre_radius(work_diam, md)
+    radius = _width_radius(work_diam, md)
 
     levels = int(getattr(model, "levels", 2))
     # Padded (N,1,H',W') U-Net input — built on the model device (GPU) or on the
@@ -501,7 +495,7 @@ def detect_batch(model, frames, device, thresh: float = 0.3,
         outputs, cur_model, cur_device = _forward_with_cpu_retry(
             cur_model, cur_device, chunk)
         res = decode_batch_centres(outputs[0], outputs[1], thresh=thresh, min_distance=md,
-                                   radius=radius, centre=centre,
+                                   radius=radius,
                                    mask_logits=outputs[2] if len(outputs) > 2 else None,
                                    mask_radius=mask_radius)
         b = res[:, 0].long().cpu().numpy() if len(res) else np.zeros(0, np.int64)
