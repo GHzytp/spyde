@@ -315,6 +315,10 @@ test('double-click marks, adapt, revert', async () => {
   await expect(nameInput).toHaveCount(0)
   await expect(save).toBeEnabled()
   await shotAll(page, '05-draft-collapsed.png')
+  // Opening the menu must not move the caret: a caret that floated aside for
+  // the menu stayed there after it closed, and the next click on it was lost.
+  const caret = page.getByTestId('find-vectors-wizard')
+  const caretBefore = await caret.boundingBox()
   await trigger.click()
   await expect(taught).toHaveCount(1)
   await expect(page.getByTestId('fv-model-divider')).toBeVisible()
@@ -323,8 +327,10 @@ test('double-click marks, adapt, revert', async () => {
   await expect(page.getByTestId('fv-model-card')).toContainText('Not saved')
   await page.waitForTimeout(300)
   await shotAll(page, '06-draft-row-open.png')
+  expect(await caret.boundingBox()).toEqual(caretBefore)
   await page.keyboard.press('Escape')
   await expect(taught).toHaveCount(0)
+  expect(await caret.boundingBox()).toEqual(caretBefore)
   // Save asks for the name, prefilled "<dataset> adapted". Escape puts the box
   // away without closing the caret; Enter keeps the model as the user's.
   await save.click()

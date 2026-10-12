@@ -219,7 +219,9 @@ export function ModelMenu({ models, value, onChange, onRename, onDelete, onRefre
         <span style={caret}>▾</span>
       </button>
       {open && (
-        <div style={menuFrame}>
+        // `data-popup`: a caret sizing itself ignores the open menu and its
+        // card (FloatingToolbar's extentOf).
+        <div style={menuFrame} data-popup="">
           <div ref={listRef} role="listbox" aria-label="Model" style={menuList}
             onScroll={() => { if (card) showCard(card.model) }}>
             {vendored.map(row)}
