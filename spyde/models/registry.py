@@ -15,6 +15,18 @@ collision and contributing a newer ``default``:
 overwrites it, but a user is free to hand-edit it; both are the "user-dir"
 manifest and sit above the bundled one.)
 
+A fourth layer holds the models a user TAUGHT — the Find Vectors adapt step
+(``spyde/models/adapt.py``) fine-tunes a copy of a model on their marks. Those
+live in their own manifest (``spyde.teach``, ``~/.spyde/models/taught.json``)
+because a remote refresh rewrites ``registry.json`` wholesale. A taught model
+is never the ``default``. Once the user names it, it is offered for every
+dataset (it can be adapted again, its parents recorded as a chain); until then
+it is an unsaved draft offered only on the dataset it was fitted on.
+
+Every model has an icon — its preferred input, the disk it would most like to
+see (``adapt.write_icon``): bundled models ship theirs in ``weights/icons/``,
+a taught model's is written beside its weights.
+
 Resolution + caching:
   - ``list_models()`` / ``available_models()`` → the merged manifest for the UI.
   - ``get_model(model_id)`` → a cached ``(model, device)``; resolves weights
@@ -39,6 +51,14 @@ Shipping a revised model (the author-side contract):
    download and a mismatch falls back to the bundled default. Checkpoints are
    loaded with ``torch.load(weights_only=True)``: plain state dicts + scalar
    hyperparams only, never pickled objects.
+
+The centre networks (``spyde.models.centre_network``) are registered the same
+way with ``"kind": "refiner"`` and an ``input`` block for their window contract
+and inference options (``centre_network``'s docstring defines each); the two
+bundled ones are the refine step's (``centre-fast-f5-v1``) and the
+Friedel-partner step's (``centre-partner-p4-v1``). An entry without a ``kind``
+is a detector. The detector list, its default and ``get_model`` never see a
+refiner, and ``get_refiner`` never sees a detector.
 
 Users pick the new model up via Find Vectors → Model dropdown → refresh
 (``fv_refresh_models`` → ``refresh_remote_registry()``); no SpyDE release
@@ -65,16 +85,22 @@ log = logging.getLogger(__name__)
 HF_REPO = "cssfrancis/spyde-spotunet"
 REMOTE_REGISTRY_FILE = "registry.json"
 
+KIND_DETECTOR = "detector"
+KIND_REFINER = "refiner"
+
 _CACHE_LOCK = threading.Lock()
 _MODEL_CACHE: dict = {}          # model_id -> (model, device)
+_REFINER_CACHE: dict = {}        # (model_id, device) -> NetworkRefiner
 _MANIFEST_CACHE: Optional[dict] = None
 
 
 # ── user dir ──────────────────────────────────────────────────────────────────
 def user_models_dir() -> str:
     """``~/.spyde/models`` — where remote-downloaded weights + the user manifest
-    live (mirrors the ``~/.spyde`` settings dir used elsewhere). Created on demand."""
-    d = os.path.join(os.path.expanduser("~"), ".spyde", "models")
+    live (mirrors the ``~/.spyde`` settings dir used elsewhere). Created on demand.
+    ``SPYDE_MODELS_DIR`` moves it, as ``SPYDE_SETTINGS_DIR`` does the settings, so
+    a test run never writes a taught model into the real home directory."""
+    d = os.environ.get("SPYDE_MODELS_DIR") or os.path.join(os.path.expanduser("~"), ".spyde", "models")
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -117,16 +143,41 @@ def _merge_manifests(*manifests: Optional[dict]) -> dict:
             default = man["default"]
     # Keep a stable, bundled-first order for the UI.
     models = list(by_id.values())
-    if default not in by_id and models:
-        default = models[0]["id"]
+    detectors = [m for m in models if model_kind(m) == KIND_DETECTOR]
+    if (default not in by_id or model_kind(by_id[default]) != KIND_DETECTOR) and detectors:
+        default = detectors[0]["id"]
     return {"default": default, "models": models}
+
+
+def model_kind(entry: dict) -> str:
+    """``"detector"`` or ``"refiner"``; an entry that predates kinds is a detector."""
+    return entry.get("kind") or KIND_DETECTOR
+
+
+def is_taught(entry: dict) -> bool:
+    """Whether ``entry`` is a model the user taught (Find Vectors adapt)."""
+    return entry.get("source", {}).get("type") == "taught"
+
+
+def _load_taught_manifest() -> dict:
+    """The user's taught models (no ``default`` — a taught model never is one)."""
+    from spyde import teach
+    # ``spyde.teach`` records what was taught as its own ``kind``; in this
+    # registry a taught SpotUNet is a detector like the one it was adapted from.
+    taught = teach.user_models(user_models_dir(), kind=TAUGHT_KIND)
+    return {"default": None, "models": [{**entry, "kind": KIND_DETECTOR} for entry in taught]}
+
+
+#: ``spyde.teach`` kind of a taught SpotUNet.
+TAUGHT_KIND = "spotunet"
 
 
 def _manifest(force: bool = False) -> dict:
     global _MANIFEST_CACHE
     if _MANIFEST_CACHE is not None and not force:
         return _MANIFEST_CACHE
-    _MANIFEST_CACHE = _merge_manifests(_load_bundled_manifest(), _load_user_manifest())
+    _MANIFEST_CACHE = _merge_manifests(_load_bundled_manifest(), _load_user_manifest(),
+                                       _load_taught_manifest())
     return _MANIFEST_CACHE
 
 
@@ -135,32 +186,87 @@ def _invalidate_manifest():
     _MANIFEST_CACHE = None
 
 
+def reload_manifest() -> None:
+    """Re-read every manifest layer on next use (after a model is taught or
+    removed)."""
+    _invalidate_manifest()
+
+
 # ── public manifest API (for the UI) ────────────────────────────────────────────
-def list_models() -> list[dict]:
-    """Full merged model entries (id/label/arch/source/version/notes)."""
-    return list(_manifest().get("models", []))
+def list_models(kind: Optional[str] = KIND_DETECTOR) -> list[dict]:
+    """Full merged model entries (id/label/arch/source/version/notes) of one
+    ``kind``; ``kind=None`` lists every entry."""
+    return [m for m in _manifest().get("models", [])
+            if kind is None or model_kind(m) == kind]
 
 
 def default_model_id() -> Optional[str]:
     return _manifest().get("default")
 
 
-def available_models() -> dict:
-    """Compact payload for the wizard Model dropdown: ``{default, models:[{id,label,
-    version,notes}]}`` (arch/source omitted — the UI doesn't need them)."""
-    return {
-        "default": default_model_id(),
-        "models": [
-            {"id": m["id"], "label": m.get("label", m["id"]),
-             "version": m.get("version"), "notes": m.get("notes")}
-            for m in list_models()
-        ],
-    }
+def available_models(scope: Optional[str] = None) -> dict:
+    """Payload for the wizard's model menu: ``{default, models:[…]}``, vendored
+    models (bundled + remote) first, then the user's taught ones. Each carries
+    ``group`` (``vendored`` | ``local``), an ``icon`` data URL when there is one,
+    and the details its card shows. An unsaved draft is listed only for the
+    dataset (``scope``) it was fitted on. Detectors only."""
+    out = []
+    for m in list_models(KIND_DETECTOR):
+        taught = is_taught(m)
+        if taught and m.get("unsaved") and m.get("scope") != scope:
+            continue
+        # ``name`` is the short display name; ``label`` the full description,
+        # which the picker shows on a model's card.
+        name = m.get("name") or m.get("label", m["id"])
+        if not taught and m["id"] == default_model_id():
+            name = f"{name} (default)"
+        item = {"id": m["id"], "label": name, "description": m.get("label", m["id"]),
+                "version": m.get("version"), "notes": m.get("notes"),
+                "group": "local" if taught else "vendored", "icon": _icon_data_url(m)}
+        if taught:
+            report = m.get("report") or {}
+            item.update(taught=True, unsaved=bool(m.get("unsaved")), name=m.get("name"),
+                        default_name=m.get("default_name"), created=m.get("created"),
+                        trained_on=(m.get("trained_on") or {}).get("title"),
+                        chain=[c.get("label") or c.get("id") for c in m.get("chain", [])],
+                        marks=report.get("disk_marks", 0) + report.get("not_disk_marks", 0),
+                        original_f1=report.get("original_f1"),
+                        original_f1_base=report.get("original_f1_base"))
+        out.append(item)
+    out.sort(key=lambda item: item["group"] == "local")
+    return {"default": default_model_id(), "models": out}
+
+
+_ICON_CACHE: dict = {}
+
+
+def _icon_data_url(entry: dict) -> Optional[str]:
+    """The model's icon as a ``data:image/png`` URL, or None (the picker then
+    draws its initials)."""
+    import base64
+    source = entry.get("source", {})
+    try:
+        if is_taught(entry):
+            if not entry.get("icon"):
+                return None
+            path = os.path.join(user_models_dir(), entry["icon"])
+        elif source.get("type") == "bundled":
+            ref = resources.files("spyde.models.weights") / "icons" / (source["file"][:-3] + ".png")
+            path = str(ref)
+        else:
+            return None
+        if path not in _ICON_CACHE:
+            with open(path, "rb") as handle:
+                _ICON_CACHE[path] = "data:image/png;base64," + base64.b64encode(handle.read()).decode()
+        return _ICON_CACHE[path]
+    except Exception as error:      # noqa: BLE001 - no icon is a glyph, not an error
+        log.debug("[models] no icon for %s: %s", entry.get("id"), error)
+        return None
 
 
 def _entry(model_id: Optional[str]) -> Optional[dict]:
     mid = model_id or default_model_id()
-    for m in list_models():
+    for m in list_models(kind=None):
         if m["id"] == mid:
             return m
     return None
@@ -220,6 +326,8 @@ def _resolve_weights(entry: dict) -> str:
         path = _resolve_bundled(source)
     elif stype == "hf":
         path = _resolve_hf(source)
+    elif stype == "taught":
+        path = os.path.join(user_models_dir(), source["file"])
     else:
         raise ValueError(f"unknown model source type {stype!r} for {entry.get('id')}")
     expected = entry.get("sha256") or source.get("sha256")
@@ -238,7 +346,7 @@ def is_cached(model_id: Optional[str] = None) -> bool:
     if entry is None:
         return True                      # unknown id resolves to bundled default
     source = entry.get("source", {})
-    if source.get("type") != "hf":
+    if source.get("type") not in ("hf", "taught"):
         return True
     return os.path.exists(os.path.join(user_models_dir(), source.get("file", "")))
 
@@ -273,8 +381,8 @@ def get_model(model_id: Optional[str] = None):
             return _MODEL_CACHE[mid]
 
     entry = _entry(mid)
-    if entry is None:
-        log.warning("[models] unknown model_id %r; using default", mid)
+    if entry is None or model_kind(entry) != KIND_DETECTOR:
+        log.warning("[models] %r is not a detector model; using default", mid)
         return get_model(None) if mid is not None else _raise_no_models()
 
     try:
@@ -291,6 +399,32 @@ def get_model(model_id: Optional[str] = None):
     with _CACHE_LOCK:
         _MODEL_CACHE[mid] = result
     return result
+
+
+def get_refiner(model_id: str, device=None):
+    """A cached :class:`~spyde.models.centre_network.NetworkRefiner` for a
+    ``"kind": "refiner"`` entry, on ``device`` (default: the detector's best
+    device). Raises when the id is unknown, is not a refiner, or fails to load —
+    unlike ``get_model`` there is no default to fall back to, and the caller
+    (``centre_refine.load_step``) keeps the centres it has instead."""
+    import torch as _torch
+
+    from . import centre_network, infer
+
+    device = _torch.device(device) if device is not None else infer._default_device()
+    key = (model_id, str(device))
+    with _CACHE_LOCK:
+        if key in _REFINER_CACHE:
+            return _REFINER_CACHE[key]
+    entry = _entry(model_id)
+    if entry is None or model_kind(entry) != KIND_REFINER:
+        raise ValueError(f"{model_id!r} is not a registered centre refiner")
+    path = _resolve_weights(entry)
+    refiner = centre_network.load_refiner(path, device, arch=entry.get("arch"),
+                                          contract=entry.get("input"))
+    with _CACHE_LOCK:
+        _REFINER_CACHE[key] = refiner
+    return refiner
 
 
 _CPU_MODEL_CACHE: dict = {}      # model_id -> (cpu_model, cpu_device)
@@ -353,6 +487,13 @@ def demote_cached_models_to_cpu() -> None:
                     _MODEL_CACHE[mid] = (model, _torch.device("cpu"))
             except Exception as e:      # pragma: no cover — best-effort demotion
                 log.debug("[models] demoting cached model %r to CPU failed: %s", mid, e)
+
+
+def forget_model(model_id: str) -> None:
+    """Drop a model from the in-process caches (a taught model that was removed)."""
+    with _CACHE_LOCK:
+        _MODEL_CACHE.pop(model_id, None)
+        _CPU_MODEL_CACHE.pop(model_id, None)
 
 
 def _raise_no_models():        # pragma: no cover

@@ -50,6 +50,11 @@ DEFAULTS: dict = dict(
     # own autocorrelation estimate; the wizard always sends its auto-seeded
     # Spot-size slider so the UI knob is the single source of truth.
     spot_radius=0.0,
+    # Neural centre steps (spyde.models.centre_refine): the refine step
+    # re-places every disk on the raw frame; the Friedel-partner step (the
+    # wizard's checkbox) runs on top of it. Preview and batch read the same keys.
+    refine_centres=True,
+    friedel_partner=True,
     # Neural stage-2 refine: drop peaks not confirmed by scan neighbours
     # (models/refine.py). BATCH-only (the preview has no neighbours) and
     # default-off until the eval benchmark says it should be on (plan Phase 3).
@@ -105,21 +110,29 @@ def find_diffraction_vectors(ctx, action_name: str = "Find Diffraction Vectors",
 
 
 def _ensure_model_local(p: dict) -> None:
-    """Resolve the neural model's weights to a LOCAL file before the compute is
+    """Resolve the neural model's weights — the detector's and the centre steps'
+    networks — to LOCAL files before the compute is
     submitted, so dask workers never touch the network (a first-use HF-hosted
     model downloads once, with a status line, instead of N times concurrently).
     No-op for non-neural methods; on failure ``get_model``'s bundled-default
     fallback takes over on the workers."""
     if str(p.get("method", "")).lower() != "neural":
         return
-    try:
-        from spyde import models
-        mid = p.get("model_id") or None
-        if not models.is_cached(mid):
-            emit_status(f"Find Vectors: downloading model {mid or 'default'}…")
-        models.ensure_local(mid)
-    except Exception as e:
-        log.debug("ensure_local(%r) failed: %s", p.get("model_id"), e)
+    from spyde import models
+    from spyde.models.centre_refine import CENTRE_MODEL, FRIEDEL_MODEL
+
+    model_ids = [p.get("model_id") or None]
+    if p.get("refine_centres"):
+        model_ids.append(CENTRE_MODEL)
+        if p.get("friedel_partner"):
+            model_ids.append(FRIEDEL_MODEL)
+    for mid in model_ids:
+        try:
+            if not models.is_cached(mid):
+                emit_status(f"Find Vectors: downloading model {mid or 'default'}…")
+            models.ensure_local(mid)
+        except Exception as e:
+            log.debug("ensure_local(%r) failed: %s", mid, e)
 
 
 def _start_batch(session, plot, src_tree, p: dict, *, overlay_visible: bool = True):
@@ -182,7 +195,8 @@ def _start_batch(session, plot, src_tree, p: dict, *, overlay_visible: bool = Tr
         navigator_override=nav_sig, selector_type=CrosshairSelector,
         provenance={"action": "Find Diffraction Vectors",
                     "source_title": base_title,
-                    "source_node": _node_name(src_tree, src), "params": dict(p)},
+                    "source_node": _node_name(src_tree, src), "params": dict(p),
+                    **_taught_provenance(src_tree, p)},
     )
 
     emit_status("Finding diffraction vectors…")
@@ -340,6 +354,14 @@ def _start_batch(session, plot, src_tree, p: dict, *, overlay_visible: bool = Tr
 
     threading.Thread(target=_work, daemon=True, name="find-vectors").start()
     return None
+
+
+def _taught_provenance(tree, p: dict) -> dict:
+    """``{"taught_model": …}`` when the run uses the model taught on this tree
+    (``find_vectors_adapt``): the parent model, the marks and the recipe."""
+    adapt = getattr(tree, "_fv_adapt", None)
+    record = adapt.provenance(p.get("model_id")) if adapt is not None else None
+    return {"taught_model": record} if record else {}
 
 
 def _node_name(tree, signal):
@@ -828,6 +850,8 @@ def fv_open(session, plot, payload) -> None:
             if old is not None and old is not new_prev:
                 remove_overlay_node(tree, old)
             tree._fv_preview = new_prev
+            if p["method"] == "neural":
+                _open_adapt(session, src, tree, p)
             # The live preview supersedes any persistent overlay from an
             # earlier Compute: both drawing at once duplicates every peak.
             clear_tree_overlay(tree, "_vector_overlay")
@@ -870,6 +894,19 @@ def _emit_estimates_done(plot) -> None:
     Compute that never enables is worse than the race it closes."""
     emit({"type": "fv_estimates_done",
           "window_id": getattr(plot, "window_id", None)})
+
+
+def _open_adapt(session, plot, tree, p: dict) -> None:
+    """Start listening for adapt marks on the source pattern (main thread: the
+    overlay and the double-click wiring touch the figure)."""
+    def _main():
+        from spyde.actions.find_vectors_adapt import controller
+        if getattr(tree, "_fv_preview", None) is None:
+            return                         # closed before this ran
+        controller(session, tree, create=True).open(plot, p)
+
+    dispatch = getattr(session, "_dispatch_to_main", None)
+    dispatch(_main) if dispatch is not None else _main()
 
 
 def _emit_auto_params(plot, tree) -> None:
@@ -975,14 +1012,18 @@ def fv_tune(session, plot, payload) -> None:
     if prev is None:
         log.info("[fv-tune] DROPPED — no _fv_preview on tree (params not applied)")
         return
+    adapt = getattr(tree, "_fv_adapt", None)
+    if adapt is not None:
+        adapt.set_params(coerced)
 
     def _work():
         from spyde.actions.vector_overlay import tune_find_vectors_preview
         try:
             tune_find_vectors_preview(tree, prev, coerced)
-            log.info("[fv-tune] parameters APPLIED thr=%s md=%s kr=%s",
-                     coerced.get("threshold"), coerced.get("min_distance"),
-                     coerced.get("kernel_radius"))
+            log.info("[fv-tune] parameters APPLIED thr=%s md=%s kr=%s refine=%s "
+                     "friedel=%s", coerced.get("threshold"),
+                     coerced.get("min_distance"), coerced.get("kernel_radius"),
+                     coerced.get("refine_centres"), coerced.get("friedel_partner"))
         except Exception as e:
             log.exception("[fv-tune] applying the parameters FAILED: %s", e)
 
@@ -1013,16 +1054,18 @@ def fv_run(session, plot, payload) -> None:
 
 
 def fv_models(session, plot, payload) -> None:
-    """Emit the available neural models for the wizard's Model dropdown.
+    """Emit the available neural detectors for the wizard's Model dropdown.
 
     Payload: ``{type: "fv_models", window_id, default, models: [{id, label,
     version, notes}]}`` — straight from the model registry (bundled manifest
     merged with any user-installed models)."""
     from spyde.models import available_models
+    from spyde.actions.find_vectors_adapt import dataset_scope
+    _src, tree = _src_plot_tree(session, plot)
     msg = {"type": "fv_models",
            "window_id": (payload or {}).get("window_id",
                                             getattr(plot, "window_id", None))}
-    msg.update(available_models())
+    msg.update(available_models(scope=dataset_scope(tree) if tree is not None else None))
     emit(msg)
 
 
@@ -1056,6 +1099,9 @@ def fv_close(session, plot, payload=None) -> None:
         # preview/stop/preview synchronously — see fv_open's gen guard).
         from spyde.actions.lifecycle import bump_generation
         bump_generation(tree, "_fv_run_gen")
+        adapt = getattr(tree, "_fv_adapt", None)
+        if adapt is not None:
+            adapt.close()
     prev = getattr(tree, "_fv_preview", None) if tree is not None else None
     log.debug("[fv-stop] removing preview=%s", prev is not None)
     if prev is not None:

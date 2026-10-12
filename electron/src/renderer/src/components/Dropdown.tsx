@@ -109,7 +109,9 @@ export function Dropdown<T extends string>({
         </span>
       </button>
       {open && (
-        <div role="listbox"
+        // `data-popup`: a caret sizing itself ignores the open menu
+        // (FloatingToolbar's extentOf) — the menu drops up on its own.
+        <div role="listbox" data-popup=""
           style={{ ...S.menu,
                    ...(dropUp ? { bottom: 'calc(100% + 3px)' }
                               : { top: 'calc(100% + 3px)' }),

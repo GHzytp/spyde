@@ -1,0 +1,1 @@
+Every diffraction vector found with the neural method gained a confidence (0–1) and a positional uncertainty, and vectors the network was unsure of were drawn faint on the pattern; vectors saved by earlier versions, or found with NXCORR or DoG, open with both empty.

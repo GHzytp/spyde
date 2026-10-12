@@ -1,0 +1,1 @@
+Find Vectors (neural) started re-placing every disk on the raw frame with a small bundled centre network, and a "Friedel partner" checkbox, on by default, added a second network that also reads each disk's partner across the direct beam — on real GaN this lowered the Friedel error of the centres from 1.13 to 0.64 px.

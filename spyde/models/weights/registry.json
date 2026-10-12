@@ -3,6 +3,7 @@
   "models": [
     {
       "id": "spotunet-anyscale8-peaked-sharpened-v1",
+      "name": "anyscale8",
       "label": "SpotUNet anyscale8 peaked+sharpened (scale-robust, bundled)",
       "version": 1,
       "notes": "spotunet_anyscale8_peaked_sharpened from yoloDiffraction: the anyscale8_peaked scale-robust base (base8, levels=3; trained across disk sizes, so it tolerates residual scale error after the canonical rescale) with the sharpened offset head grafted on. Best current all-rounder on real 4D-STEM (ZrNb/CuNb/SPED-Ag truth benchmark, 2026-07-16); parameter-free with auto-calibration.",
@@ -11,7 +12,18 @@
       "source": {"type": "bundled", "file": "spotunet_anyscale8_peaked_sharpened.pt"}
     },
     {
+      "id": "spotunet-dynamical-mask8-v1",
+      "name": "dynamical-mask8",
+      "label": "SpotUNet dynamical, mask head (bundled)",
+      "version": 1,
+      "notes": "anyscale8 fine-tuned on multislice-filled (dynamical) disks rendered with counted and integrating detector noise, then self-trained on real 4D-STEM frames whose labels are persistence- and Friedel-verified. A disk-coverage head places each disk at the centroid of its predicted aperture, so the centre follows the disk edge rather than where the intensity sits inside it. Halves the centre error on dynamical disks and cuts false positives on sparse counted data; on real SPED-Ag the in-grain strain speckle drops from 0.063 to 0.036 %.",
+      "arch": {"base": 8, "in_ch": 1, "levels": 3, "mask_head": true},
+      "sha256": "807c8039707aca08fdc75cfc527e167e5929b12bcf0750ddb0d7370b32444714",
+      "source": {"type": "bundled", "file": "spotunet_dynamical_mask8.pt"}
+    },
+    {
       "id": "spotunet-production-v2",
+      "name": "production",
       "label": "SpotUNet production (bundled)",
       "version": 2,
       "notes": "SRO-augmented edge-decoupled detector; best on CuNb/ZrNb/SPED-Ag, parameter-free with auto-calibration. Beats WNCC on crystalline 4D-STEM. Slightly higher crystal recall than anyscale8 on canonical-size disks; weaker off its trained scale.",
@@ -20,11 +32,38 @@
     },
     {
       "id": "spotunet-base16-v1",
+      "name": "base16 (legacy)",
       "label": "SpotUNet base16 (legacy)",
       "version": 1,
       "notes": "Earlier edge-trained detector. Kept as a fallback.",
       "arch": {"base": 16, "in_ch": 1, "levels": 2},
       "source": {"type": "bundled", "file": "spotunet_base16.pt"}
+    },
+    {
+      "id": "centre-fast-f5-v1",
+      "kind": "refiner",
+      "label": "Centre network F5 (bundled; the refine step)",
+      "version": 1,
+      "notes": "The refine step. Segments each disk in a 33 px window of the raw frame (spot radius -> 10 window px) and takes the coverage centroid; re-crops disks the first pass moved by more than 0.15 R; its sigma head is calibrated per checkpoint (sigma_scale 0.98). On real GaN it lowers the Friedel error of the detector's centres from 1.13 to 0.84 px. Skipped below a 5 px spot radius.",
+      "arch": {"base": 8, "levels": 2, "depthwise": 0, "sigma_head": 1},
+      "input": {"crop_radius": 10.0, "crop_half": 16, "annulus": [0.78, 1.0],
+                "passes": 2, "recrop_over": 0.15, "max_sigma_fraction": 0.25,
+                "min_spot_radius": 5.0},
+      "sha256": "2b4d4f5c17b14db0667dbee9218c0b7e0bfe54f9051181178fc984b83bd1318a",
+      "source": {"type": "bundled", "file": "centre_fast_f5.pt"}
+    },
+    {
+      "id": "centre-partner-p4-v1",
+      "kind": "refiner",
+      "label": "Friedel-partner network P4 (bundled; the step on top of F5)",
+      "version": 1,
+      "notes": "The refine step's layout reading two channels: the disk's own window and the window at its Friedel mirror point 2 x beam - p (rotated 180 degrees), so it sees both dynamical fills of g and -g. The beam is each frame's centre of Friedel symmetry, from the incoming centres. Trained on disks of 6-16 px radius; outside that range it leaves the incoming centres alone (below 6 px a version trained smaller made in-grain speckle worse).",
+      "arch": {"base": 8, "levels": 2, "depthwise": 0, "sigma_head": 1},
+      "input": {"crop_radius": 10.0, "crop_half": 16, "annulus": [0.78, 1.0],
+                "passes": 2, "recrop_over": 0.15, "max_sigma_fraction": 0.25,
+                "min_spot_radius": 6.0, "max_spot_radius": 16.0},
+      "sha256": "7a8bc8a3bacb40006447d02ce300e0bc11a181a22727b1d523753f4cd8b2055a",
+      "source": {"type": "bundled", "file": "centre_partner_p4.pt"}
     }
   ]
 }

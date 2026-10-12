@@ -62,12 +62,16 @@ test('neural wizard: bg-σ control, auto-calibration, model refresh, compute', a
   await expect(page.getByTestId('fv-subpixel')).toHaveCount(0)
   await expect(page.getByTestId('fv-bg-sigma')).toHaveCount(0)
   await expect(page.getByTestId('fv-model')).toBeVisible()
-  await expect(page.getByTestId('fv-refresh-models')).toBeVisible()
+  // The registry refresh lives in the Model menu now, not beside it.
+  await expect(page.getByTestId('fv-model-refresh')).toHaveCount(0)
   await page.screenshot({ path: 'fv_neural_shots/01-wizard-open.png' })
 
-  // The themed Model dropdown opens with the menubar look (screenshot check).
+  // The themed Model dropdown lists every bundled model, each with its icon.
   await page.getByTestId('fv-model').click()
   await expect(page.getByTestId('fv-model-opt-spotunet-production-v2')).toBeVisible()
+  await page.getByTestId('fv-model-opt-spotunet-production-v2').hover()
+  await expect(page.getByTestId('fv-model-card')).toBeVisible()
+  await expect(page.getByTestId('fv-model-refresh')).toBeVisible()
   await page.screenshot({ path: 'fv_neural_shots/01b-model-dropdown.png' })
   await page.keyboard.press('Escape')
 
@@ -76,13 +80,15 @@ test('neural wizard: bg-σ control, auto-calibration, model refresh, compute', a
   // the reliable signal that the pipeline executed).
   await backend.waitForLog('neural calibration:', 60_000)
 
-  // ↻ refresh: offline-safe — with or without reachable HF the backend re-emits
-  // the merged list and the wizard reports it.
-  await page.getByTestId('fv-refresh-models').click()
+  // "Check for new models", the menu's last row: offline-safe — with or without
+  // reachable HF the backend re-emits the merged list and the wizard reports it.
+  await page.getByTestId('fv-model').click()
+  await page.getByTestId('fv-model-refresh').click()
   await expect(page.getByTestId('fv-status')).toContainText(/Model list refreshed/i, {
     timeout: 30_000,
   })
   await page.screenshot({ path: 'fv_neural_shots/02-models-refreshed.png' })
+  await page.keyboard.press('Escape')
 
   // Compute waits for the estimates, then sends what the caret shows (params
   // include spot_radius; nav blur forced off) → the vectors result window

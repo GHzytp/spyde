@@ -120,7 +120,13 @@ const hasPopout = (a: ToolbarAction) => hasParams(a) || hasSubs(a)
 /** The box a caret really occupies: its own border box plus whatever is
  *  absolutely positioned out of it. The per-VI caret hangs BELOW the
  *  sub-toolbar, so the sub-toolbar's own box under-reports by the caret's
- *  whole height; the wizards' only overhang is their 8px pointer. */
+ *  whole height; the wizards' only overhang is their 8px pointer.
+ *
+ *  An open dropdown menu (`data-popup`) is left out. Counting it floated the
+ *  whole caret aside the moment the menu opened, and closing the menu does not
+ *  change the caret's own box, so nothing placed it back: the caret stayed
+ *  aside until the next mousedown re-rendered it, and that click's mouseup
+ *  landed on whatever had been underneath. A menu places itself instead. */
 function extentOf(el: HTMLElement): { w: number; h: number } | null {
   let top = Infinity, left = Infinity, bottom = -Infinity, right = -Infinity
   const grow = (r: DOMRect) => {
@@ -130,6 +136,7 @@ function extentOf(el: HTMLElement): { w: number; h: number } | null {
   }
   grow(el.getBoundingClientRect())
   el.querySelectorAll<HTMLElement>('*').forEach((node) => {
+    if (node.closest('[data-popup]')) return
     if (getComputedStyle(node).position === 'absolute') grow(node.getBoundingClientRect())
   })
   return top < bottom ? { w: right - left, h: bottom - top } : null

@@ -178,19 +178,41 @@ def _add_overlay(tree, parent_signal, function, **kwargs):
 
 # ── found vectors on the source or result diffraction pattern ────────────────
 
+# A vector whose detector was unsure of it (a faded reflection) is drawn
+# faint, so the user sees which vectors the strain fit leans on. Vectors without
+# a measured confidence (NXCORR, DoG, files from before it existed) count as sure.
+UNSURE_BELOW = 0.6
+UNSURE_ALPHA = 0.35
+
+
+def _faded(color: str, alpha: float = UNSURE_ALPHA) -> str:
+    """``#rrggbb`` as a translucent CSS colour: a marker's group ``alpha`` only
+    fades its fill, so a faint outline needs the alpha in the colour itself."""
+    c = color.lstrip("#")
+    r, g, b = (int(c[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 def found_vector_offsets(*, rows, pixels: DetectorPixels) -> dict:
-    """The found vectors at one navigation position, as marker offsets."""
+    """The found vectors at one navigation position, as marker offsets: the
+    confident ones (``found``) and the ones below ``UNSURE_BELOW`` (``unsure``)."""
     rows = np.asarray(rows)
+    empty = np.zeros((0, 2), dtype=np.float32)
     if rows.size == 0:
-        return {"found": np.zeros((0, 2), dtype=np.float32)}
-    from spyde.signals.diffraction_vectors import COL_KX, COL_KY
-    return {"found": pixels.clipped(rows[:, [COL_KX, COL_KY]])}
+        return {"found": empty, "unsure": empty}
+    from spyde.signals.diffraction_vectors import COL_CONFIDENCE, COL_KX, COL_KY
+    if rows.shape[1] <= COL_CONFIDENCE:
+        return {"found": pixels.clipped(rows[:, [COL_KX, COL_KY]]), "unsure": empty}
+    unsure = rows[:, COL_CONFIDENCE] < UNSURE_BELOW            # NaN compares False
+    return {"found": pixels.clipped(rows[~unsure][:, [COL_KX, COL_KY]]),
+            "unsure": pixels.clipped(rows[unsure][:, [COL_KX, COL_KY]])}
 
 
 def attach_vector_overlay(vecs, tree, *, color="#ff3030", name="found_vectors",
                           radius_px=None, signal=None):
     """Draw the found vectors as circles on the windows showing ``signal`` (the
-    node they were found on), tracking the navigator. Returns the node."""
+    node they were found on), tracking the navigator; unsure vectors faint.
+    Returns the node."""
     pixels = DetectorPixels.from_axes(vecs.sig_axes)
     if radius_px is None:
         radius_px = getattr(vecs, "kernel_radius_px", 4.0)
@@ -198,7 +220,9 @@ def attach_vector_overlay(vecs, tree, *, color="#ff3030", name="found_vectors",
              "facecolors": None, "linewidths": 1.5, "alpha": 1.0}
     return _add_overlay(
         tree, signal if signal is not None else tree.root, found_vector_offsets,
-        name=name, source=False, groups={"found": ("circles", style)},
+        name=name, source=False,
+        groups={"found": ("circles", style),
+                "unsure": ("circles", dict(style, edgecolors=_faded(color)))},
         iterating={"rows": VectorRows(vecs)}, static={"pixels": pixels},
     )
 
@@ -249,7 +273,7 @@ def _transform_levels(response, method: str, threshold: float):
 
 
 def find_vectors_preview(window, centre=None, *, params: dict, sigma: float,
-                         beamstop_mask, show_transform: bool) -> dict:
+                         beamstop_mask, show_transform: bool, position=None) -> dict:
     """The peaks the detector finds in the frame under the crosshair, the image
     it found them in when the transform view is on, and the beam stop it
     excluded.
@@ -273,8 +297,11 @@ def find_vectors_preview(window, centre=None, *, params: dict, sigma: float,
         # peaks are [ky_row, kx_col, value] in pixels; a marker is (x, y).
         offsets = np.column_stack([peaks[:, 1], peaks[:, 0]]).astype(np.float32)
     threshold = float(params.get("threshold", 0.0))
+    # ``index`` is the navigation position these peaks were found at, so a
+    # double-click on them (find_vectors_adapt) knows which pattern it marks.
     value = {"peaks": {"data": offsets, "radius": _preview_marker_radius(params)},
-             "transform": None, "mask": beamstop_mask, "threshold": threshold}
+             "transform": None, "mask": beamstop_mask, "threshold": threshold,
+             "index": None if position is None else tuple(int(v) for v in position)}
     if response is not None:
         response = np.asarray(response, dtype=np.float32)
         levels = _transform_levels(
@@ -297,7 +324,9 @@ def _detector_params(params: dict) -> dict:
     parameter set."""
     return {key: params[key] for key in
             ("method", "kernel_radius", "threshold", "min_distance", "subpixel",
-             "model_id", "bg_sigma", "spot_radius", "dog_sigma1", "dog_sigma2")
+             "model_id", "bg_sigma", "spot_radius", "refine_centres",
+             "friedel_partner",
+             "dog_sigma1", "dog_sigma2")
             if key in params}
 
 
@@ -353,6 +382,7 @@ def attach_find_vectors_preview(dp_plot, signal, tree, params: dict,
         static={"params": _detector_params(params), "sigma": sigma,
                 "beamstop_mask": None,
                 "show_transform": bool(params.get("show_transform"))},
+        iterating={"position": NavigationPosition()},
         on_value=lambda value: _emit_preview_histogram(dp_plot, value),
     )
     request_beamstop(tree, node, params)

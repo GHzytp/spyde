@@ -1,0 +1,1 @@
+Find Vectors' controls were rearranged: the heatmap became a switch beside Method, "Mask beam stop" moved under a collapsed "Extra", "Check for new models" moved into the Model menu, and a taught model is named from a Save button beside Adapt and Revert.
