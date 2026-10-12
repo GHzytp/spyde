@@ -28,6 +28,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .decode import _centre_on_mask
+
 CENTRE_SOFTARGMAX = "softargmax"
 CENTRE_OFFSET = "offset"          # the frozen decode: argmax pixel + offset head
 CENTRES = (CENTRE_SOFTARGMAX, CENTRE_OFFSET)
@@ -35,14 +37,17 @@ CENTRES = (CENTRE_SOFTARGMAX, CENTRE_OFFSET)
 
 @torch.no_grad()
 def decode_batch_centres(hm_logits, off, thresh=0.3, min_distance=3, radius=3.0,
-                         centre: str = CENTRE_OFFSET):
+                         centre: str = CENTRE_OFFSET, mask_logits=None, mask_radius=4.5):
     """Peaks of a ``(B,1,H,W)`` heatmap batch, as ``(M,5)``
     ``[batch, y, x, confidence, width]`` in working pixels.
 
     The peaks themselves are exactly ``decode.decode_batch``'s (same max-pool,
     same threshold), so switching ``centre`` changes where a disk is placed,
     never which disks are found. ``radius`` (working px) is the window the
-    soft-argmax and the response width are taken over — the disk's own radius."""
+    soft-argmax and the response width are taken over — the disk's own radius.
+    ``mask_logits`` (a mask-head model's third output) moves the offset-head
+    position to the mask centroid exactly as ``decode.decode_batch`` does, with
+    ``mask_radius`` the expected disk radius in working px."""
     if centre not in CENTRES:
         raise ValueError(f"centre must be one of {CENTRES}; got {centre!r}")
     hm = torch.sigmoid(hm_logits)
@@ -75,6 +80,8 @@ def decode_batch_centres(hm_logits, off, thresh=0.3, min_distance=3, radius=3.0,
     else:
         y = ys.float() + off[b, 0, ys, xs]
         x = xs.float() + off[b, 1, ys, xs]
+        if mask_logits is not None:
+            y, x = _centre_on_mask(mask_logits, b, y, x, mask_radius)
     return torch.stack([b.float(), y, x, confidence, width], 1)
 
 

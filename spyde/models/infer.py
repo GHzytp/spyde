@@ -20,7 +20,7 @@ import numpy as np
 import torch
 
 from .centre import CENTRE_OFFSET, decode_batch_centres
-from .preprocess import estimate_disk_diameter, normalize_input, scale_to_canonical
+from .preprocess import CANONICAL_DIAMETER, estimate_disk_diameter, normalize_input, scale_to_canonical
 from .unet import SpotUNet
 
 log = logging.getLogger(__name__)
@@ -99,7 +99,14 @@ def _default_device():
 def load_model(ckpt_path, device=None, arch: dict | None = None):
     """Load a SpotUNet checkpoint. ``arch`` (from the model registry) overrides the
     architecture hyperparams when present; otherwise they're read from the
-    checkpoint (which stores ``base``/``in_ch``/``levels``)."""
+    checkpoint (which stores ``base``/``in_ch``/``levels`` and, for newer models,
+    ``mask_head``).
+
+    The operating point a model was trained for travels with it, read from the
+    checkpoint onto the model: ``mad_floor`` (floor on the normalisation scale, None
+    for the older models) and ``default_threshold`` (the heatmap threshold
+    ``calibrate`` starts from, 0.3 unless the checkpoint says otherwise; set so that
+    models run at a comparable false-positive rate)."""
     device = device or _default_device()
     # weights_only=True: checkpoints are plain state dicts + scalar hyperparams;
     # never unpickle arbitrary objects from a (possibly downloaded) file.
@@ -110,8 +117,12 @@ def load_model(ckpt_path, device=None, arch: dict | None = None):
         in_ch=in_ch,
         base=arch.get("base", ck["base"]),
         levels=arch.get("levels", ck.get("levels", 2)),
+        mask_head=bool(arch.get("mask_head", ck.get("mask_head", False))),
     )
     model.load_state_dict(ck["state_dict"])
+    mad_floor = float(ck.get("mad_floor", 0.0) or 0.0)
+    model.mad_floor = mad_floor if mad_floor > 0 else None
+    model.default_threshold = float(ck.get("threshold", 0.3) or 0.3)
     # Moving the weights to MPS and the smoke-test forward are both real device
     # submissions, and ``registry.get_model`` deliberately calls this OUTSIDE its
     # cache lock (so a slow download doesn't block the cache) — so several
@@ -133,6 +144,13 @@ def load_model(ckpt_path, device=None, arch: dict | None = None):
                 device = torch.device("cpu")
                 model = model.to(device)
     return model, device
+
+
+def _mask_radius(work_diam: float) -> float:
+    """Expected disk radius at working resolution, for the mask-centroid decode."""
+    if np.isfinite(work_diam) and work_diam > 0:
+        return 0.5 * float(work_diam)
+    return 0.5 * CANONICAL_DIAMETER
 
 
 def _pad_to_multiple(nrm: np.ndarray, levels: int):
@@ -206,9 +224,11 @@ def auto_bg_sigma(model, work: np.ndarray, device,
     (best_bg_sigma, best_confidence)."""
     levels = int(getattr(model, "levels", 2))
     best_conf, best_sigma = -1.0, DEFAULT_BG_SIGMA
+    mad_floor = getattr(model, "mad_floor", None)
     for s in candidates:
-        nrm = _pad_to_multiple(normalize_input(work, local=True, bg_sigma=float(s)), levels)
-        hm, _ = model(torch.from_numpy(nrm[None, None].astype(np.float32)).to(device))
+        nrm = _pad_to_multiple(normalize_input(work, local=True, bg_sigma=float(s), mad_floor=mad_floor),
+                               levels)
+        hm = model(torch.from_numpy(nrm[None, None].astype(np.float32)).to(device))[0]
         c = float(torch.sigmoid(hm).max())
         if c > best_conf:
             best_conf, best_sigma = c, float(s)
@@ -291,13 +311,15 @@ def detect(model, frame: np.ndarray, device, thresh: float = 0.3,
     md = max(2, int(round(min_distance * factor)))
     work_diam = _estimate_work_diam(frame, factor, spot_diameter)
     md, bg_sigma = _big_disk_params(md, bg_sigma, work_diam)
-    nrm = normalize_input(work, local=True, bg_sigma=bg_sigma)
+    nrm = normalize_input(work, local=True, bg_sigma=bg_sigma, mad_floor=getattr(model, "mad_floor", None))
     levels = int(getattr(model, "levels", 2))
     nrm = _pad_to_multiple(nrm, levels)
     x = torch.from_numpy(nrm[None, None]).to(device)
-    hm, off = model(x)
-    res = decode_batch_centres(hm, off, thresh=thresh, min_distance=md,
-                               radius=_centre_radius(work_diam, md), centre=centre)
+    outputs = model(x)
+    res = decode_batch_centres(outputs[0], outputs[1], thresh=thresh, min_distance=md,
+                               radius=_centre_radius(work_diam, md), centre=centre,
+                               mask_logits=outputs[2] if len(outputs) > 2 else None,
+                               mask_radius=_mask_radius(work_diam))
     return _frame_rows(res, frame.shape, factor, with_width)
 
 
@@ -324,13 +346,13 @@ def _forward_with_cpu_retry(model, device, x):
     per-op CPU retry). ``x`` may already sit on ``device`` (on-device preprocessing)
     or on CPU (host numpy prep); it is moved to the active device either way.
 
-    Returns ``(hm, off, model, device)`` — the (possibly CPU-moved) model+device
-    are what the caller must use for the REST of this call. On CUDA/CPU the retry
-    path never triggers, so behaviour there is unchanged."""
+    Returns ``(outputs, model, device)`` — the model's output tuple (heatmap,
+    offsets, and the mask for a mask-head model) and the (possibly CPU-moved)
+    model+device the caller must use for the REST of this call. On CUDA/CPU the
+    retry path never triggers, so behaviour there is unchanged."""
     xd = x.to(device)
     try:
-        hm, off = model(xd)
-        return hm, off, model, device
+        return model(xd), model, device
     except RuntimeError as e:
         # A catchable MPS (or other device) op failure. Re-move the model to CPU
         # ONCE and retry this sub-batch there; subsequent sub-batches reuse the
@@ -352,8 +374,7 @@ def _forward_with_cpu_retry(model, device, x):
             demote_cached_models_to_cpu()
         except Exception:
             pass
-        hm, off = model(x.to(cpu))
-        return hm, off, model, cpu
+        return model(x.to(cpu)), model, cpu
 
 
 def _gpu_prep_enabled() -> bool:
@@ -367,7 +388,7 @@ def _gpu_prep_enabled() -> bool:
 
 
 def _build_input_stack(frames: np.ndarray, device, factor: float, bg_sigma: float,
-                       levels: int, auto_scale: bool):
+                       levels: int, auto_scale: bool, mad_floor: float | None = None):
     """Preprocess ``frames`` ((N,H,W)) into the padded ``(N,1,H',W')`` U-Net input
     tensor: scale → normalise → pad-to-multiple.
 
@@ -383,7 +404,7 @@ def _build_input_stack(frames: np.ndarray, device, factor: float, bg_sigma: floa
             x = torch.from_numpy(frames).to(device)                  # (N,H,W)
             if auto_scale and factor != 1.0:
                 x = pt.scale_batch(x, factor)
-            x = pt.normalize_input_batch(x, bg_sigma=bg_sigma, local=True)
+            x = pt.normalize_input_batch(x, bg_sigma=bg_sigma, local=True, mad_floor=mad_floor)
             return pt.pad_to_multiple_batch(x, levels).unsqueeze(1)   # (N,1,H',W')
         except Exception as e:                     # pragma: no cover — device-specific
             log.warning("[models] on-device preprocessing failed (%s); falling back "
@@ -394,7 +415,7 @@ def _build_input_stack(frames: np.ndarray, device, factor: float, bg_sigma: floa
         if auto_scale and factor != 1.0:
             from scipy.ndimage import zoom
             f = zoom(f, factor, order=1)
-        nrm_list.append(normalize_input(f, local=True, bg_sigma=bg_sigma))
+        nrm_list.append(normalize_input(f, local=True, bg_sigma=bg_sigma, mad_floor=mad_floor))
     stack = np.stack(nrm_list, 0)
     stack = np.stack([_pad_to_multiple(n, levels) for n in stack], 0)
     return torch.from_numpy(stack[:, None])                           # CPU (N,1,H',W')
@@ -459,7 +480,9 @@ def detect_batch(model, frames, device, thresh: float = 0.3,
     # Padded (N,1,H',W') U-Net input — built on the model device (GPU) or on the
     # host (CPU); see _build_input_stack. Shared factor/bg_sigma keep every frame
     # one shape, so it's a single tensor sliced per sub-batch below.
-    stack_t = _build_input_stack(frames, device, factor, bg_sigma, levels, auto_scale)
+    stack_t = _build_input_stack(frames, device, factor, bg_sigma, levels, auto_scale,
+                                 mad_floor=getattr(model, "mad_floor", None))
+    mask_radius = _mask_radius(work_diam)
 
     K = _neural_sub_batch_size()
     per_frame: list = []
@@ -475,15 +498,17 @@ def detect_batch(model, frames, device, thresh: float = 0.3,
         # If even the CPU retry inside _forward_with_cpu_retry fails, the error
         # propagates to the caller's coarser fallback (per-frame CPU in
         # _neural_block) — no extra handling needed here.
-        hm, off, cur_model, cur_device = _forward_with_cpu_retry(
+        outputs, cur_model, cur_device = _forward_with_cpu_retry(
             cur_model, cur_device, chunk)
-        res = decode_batch_centres(hm, off, thresh=thresh, min_distance=md,
-                                   radius=radius, centre=centre)
+        res = decode_batch_centres(outputs[0], outputs[1], thresh=thresh, min_distance=md,
+                                   radius=radius, centre=centre,
+                                   mask_logits=outputs[2] if len(outputs) > 2 else None,
+                                   mask_radius=mask_radius)
         b = res[:, 0].long().cpu().numpy() if len(res) else np.zeros(0, np.int64)
         res_np = res.cpu().numpy()
         for f in range(chunk.shape[0]):
             per_frame.append(_frame_rows(res_np[b == f], frames.shape[1:], factor, with_width))
-        del hm, off, res
+        del outputs, res
         if cur_device.type == "cuda":
             torch.cuda.empty_cache()
 
@@ -540,10 +565,11 @@ def calibrate(model, sample_frames, device, tune_threshold: bool = True,
     best_conf = float(np.median(confs))
 
     # 3) threshold: if even the best-bg confidence is weak (faint-peak regime), lower
-    #    the threshold so real faint peaks survive; otherwise keep the default.
-    thresh = 0.3
+    #    the threshold so real faint peaks survive; otherwise keep the model's default.
+    default = float(getattr(model, "default_threshold", 0.3))
+    thresh = default
     if tune_threshold and best_conf < 0.45:
-        thresh = float(np.clip(0.5 * best_conf, 0.1, 0.3))
+        thresh = float(np.clip(0.5 * best_conf, 0.1, default))
 
     return {"bg_sigma": bg, "thresh": thresh, "scale_factor": float(factor),
             "confidence": best_conf}
