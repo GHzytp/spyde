@@ -58,7 +58,7 @@ def normalize_input(frame: np.ndarray, local: bool = True,
     pixels zero) the median absolute deviation is ~0, so single counts become 1e5-1e6
     units and a network fires on every one of them. Real 4D-STEM data measures
     0.13-2.0, so a floor of 0.05 never binds there. A model trained with a floor
-    declares it in its registry entry; ``None`` keeps the original maths.
+    declares it in its checkpoint; ``None`` keeps the original maths.
     """
     x = np.log1p(np.clip(frame, 0, None).astype(np.float32))
     if local:

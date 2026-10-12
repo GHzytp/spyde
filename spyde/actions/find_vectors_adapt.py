@@ -231,8 +231,12 @@ class FindVectorsAdapt:
                                            "levels": int(model.levels), "in_ch": 1})
 
         def write(path: str) -> None:
+            # load_model reads the operating point from the checkpoint, not the entry.
             torch.save({"state_dict": model.state_dict(), "base": arch.get("base"),
-                        "levels": arch.get("levels"), "in_ch": arch.get("in_ch", 1)}, path)
+                        "levels": arch.get("levels"), "in_ch": arch.get("in_ch", 1),
+                        "mask_head": bool(arch.get("mask_head", False)),
+                        "mad_floor": getattr(model, "mad_floor", None) or 0.0,
+                        "threshold": getattr(model, "default_threshold", 0.3)}, path)
 
         entry = teach.save_user_model(
             models.registry.user_models_dir(), kind=models.registry.TAUGHT_KIND, scope=snap["scope"],

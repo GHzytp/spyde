@@ -18,8 +18,9 @@ deliberate domain shift (5 datasets, 2 click draws each):
   and on their own they raise the response everywhere.
 * Unmarked pixels are held to the base model's own output (weighted toward its
   peaks), so a mark changes the neighbourhood of what was marked, not the whole
-  pattern. The sub-pixel offset head is held to the base model too: a click is
-  not sub-pixel accurate, so it names the disk, never its centre.
+  pattern. The heads that place a disk — the sub-pixel offset head and, on a
+  model that has one, the mask head — are held to the base model too: a click
+  is not sub-pixel accurate, so it names the disk, never its centre.
 * 20 % replay of the original synthetic training frames keeps the model a disk
   detector: without it, accuracy on the original distribution falls from F1
   0.86 to ~0.60; with it, ~0.78. :func:`original_f1` reports that number, so
@@ -39,9 +40,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .centre import decode_batch_centres
 from .decode import decode_batch, split_by_batch
-from .infer import _big_disk_params, _estimate_work_diam, _pad_to_multiple
-from .preprocess import normalize_input, scale_to_canonical
+from .infer import (_big_disk_params, _build_input_stack, _estimate_work_diam, _frame_rows,
+                    _mask_radius)
+from .preprocess import scale_to_canonical
 
 log = logging.getLogger(__name__)
 
@@ -75,11 +78,11 @@ HYPERPARAMETERS = dict(learning_rate=LEARNING_RATE, replay_weight=REPLAY_WEIGHT,
 # ── preprocessing, exactly as detect() does it ───────────────────────────────
 
 class Working:
-    """A stack of patterns at the model's working resolution, with the decode
+    """A stack of patterns at ``model``'s working resolution, with the decode
     parameters ``detect`` would use for them."""
 
-    def __init__(self, frames, params: dict, levels: int):
-        frames = [np.asarray(f, np.float32) for f in frames]
+    def __init__(self, frames, params: dict, model):
+        frames = np.stack([np.asarray(f, np.float32) for f in frames])
         spot_radius = float(params.get("spot_radius") or 0)
         spot_diameter = 2.0 * spot_radius if spot_radius > 0 else None
         _, self.factor = scale_to_canonical(frames[0], diameter=spot_diameter)
@@ -87,21 +90,22 @@ class Working:
         work_diam = _estimate_work_diam(frames[0], self.factor, spot_diameter)
         bg = params.get("bg_sigma")
         self.min_distance, self.bg_sigma = _big_disk_params(md, None if bg is None else float(bg), work_diam)
+        self.mask_radius = _mask_radius(work_diam)
         self.threshold = float(params.get("threshold", 0.3))
-        self.shape = frames[0].shape
-        out = []
-        for frame in frames:
-            if self.factor != 1.0:
-                from scipy.ndimage import zoom
-                frame = zoom(frame, self.factor, order=1)
-            out.append(_pad_to_multiple(normalize_input(frame, local=True, bg_sigma=self.bg_sigma), levels))
-        self.x = torch.from_numpy(np.stack(out)[:, None].astype(np.float32))
+        self.shape = frames.shape[1:]
+        self.x = _build_input_stack(frames, torch.device("cpu"), self.factor, self.bg_sigma,
+                                    int(getattr(model, "levels", 2)), auto_scale=True,
+                                    mad_floor=getattr(model, "mad_floor", None))
 
-    def peaks(self, hm, off) -> list[np.ndarray]:
-        """(N_i, 3) [y, x, score] per pattern, in ORIGINAL pixels."""
-        per = split_by_batch(decode_batch(hm, off, thresh=self.threshold,
-                                          min_distance=self.min_distance), hm.shape[0])
-        return [np.column_stack([p[:, :2] / self.factor, p[:, 2:]]) if len(p) else p for p in per]
+    def peaks(self, outputs) -> list[np.ndarray]:
+        """(N_i, 3) [y, x, score] per pattern, in ORIGINAL pixels, from a model's
+        outputs on ``x``: ``detect``'s decode and mapping back."""
+        found = decode_batch_centres(outputs[0], outputs[1], thresh=self.threshold,
+                                     min_distance=self.min_distance,
+                                     mask_logits=outputs[2] if len(outputs) > 2 else None,
+                                     mask_radius=self.mask_radius).cpu().numpy()
+        return [_frame_rows(found[found[:, 0] == b], self.shape, self.factor, with_width=False)
+                for b in range(outputs[0].shape[0])]
 
 
 # ── marks → training targets ─────────────────────────────────────────────────
@@ -116,7 +120,8 @@ def mark_targets(base, working: Working, marks: list[np.ndarray], disk_radius_px
     beside a found one. A "not a disk" mark sets a small disk of the heatmap to
     zero. Every mark weighs the same however many pixels it covers."""
     x = working.x.to(device)
-    hm_b, off_b = base(x)
+    outputs = base(x)
+    hm_b, off_b = outputs[0], outputs[1]
     n, _, h, w = x.shape
     f = working.factor
     target = torch.zeros_like(hm_b)
@@ -158,7 +163,8 @@ def mark_targets(base, working: Working, marks: list[np.ndarray], disk_radius_px
             target[b, 0, iy, ix] = 1.0
             region = ((yy - iy) ** 2 + (xx - ix) ** 2) <= 9.0
             weight[b, 0][region] += 1.0 / region.sum()
-    return dict(x=x, target=target, weight=weight, hm_base=hm_b, off_base=off_b)
+    return dict(x=x, target=target, weight=weight, hm_base=hm_b, off_base=off_b,
+                mask_base=outputs[2] if len(outputs) > 2 else None)
 
 
 # ── losses ───────────────────────────────────────────────────────────────────
@@ -182,6 +188,14 @@ def _hold_loss(logit, hm_base, weight):
 def _offset_hold(off, off_base, hm_base):
     near = (torch.sigmoid(hm_base) > 0.1).float()
     return ((off - off_base).abs() * near).sum() / (2 * near.sum()).clamp_min(1)
+
+
+def _mask_hold(mask, mask_base, hm_base):
+    """The mask head's coverage held to the base model's near its detections:
+    on a mask-head model it is what places each disk."""
+    near = (torch.sigmoid(hm_base) > 0.1).float()
+    difference = (torch.sigmoid(mask) - torch.sigmoid(mask_base)).abs()
+    return (difference * near).sum() / near.sum().clamp_min(1)
 
 
 def _focal(logits, target, eps=1e-6):
@@ -236,7 +250,7 @@ def _replay_loss(model, rng, device, n=2):
     heatmap = bank["heatmap"][index].to(device)
     offset = bank["offset"][index].to(device)
     mask = bank["mask"][index].to(device)[:, None]
-    logit, predicted = model(x)
+    logit, predicted = model(x)[:2]
     return _focal(logit, heatmap) + (F.l1_loss(predicted * mask, offset * mask, reduction="sum")
                                      / mask.sum().clamp_min(1))
 
@@ -250,7 +264,7 @@ def original_f1(model, device, threshold: float = 0.3) -> float:
     bank = _bank()
     model.eval()
     x = bank["x"][GAUGE].to(device)
-    hm, off = model(x)
+    hm, off = model(x)[:2]
     found = split_by_batch(decode_batch(hm, off, thresh=threshold, min_distance=2), x.shape[0])
     tp = fp = fn = 0
     for k, i in enumerate(range(GAUGE.start, GAUGE.stop)):
@@ -292,8 +306,7 @@ def marks_learned(model, working: Working, marks: list[np.ndarray], disk_radius_
     """Per mark, whether ``model`` now agrees with it on its pattern: no detection
     within ~0.4 disk radii of a "not a disk" mark, a detection within ~0.5 radii
     of a "disk here" mark. The decode is the preview's (``Working.peaks``)."""
-    logit, off = model(working.x.to(next(model.parameters()).device))
-    found = working.peaks(logit, off)
+    found = working.peaks(model(working.x.to(next(model.parameters()).device)))
     out = []
     for frame_marks, peaks in zip(marks, found):
         for my, mx, label in np.asarray(frame_marks, np.float64).reshape(-1, 3):
@@ -332,7 +345,7 @@ def adapt(base, device, frames, marks: list[np.ndarray], params: dict, *,
     with accelerator_lock(device):
         base = base.to(device).eval()
         model = copy.deepcopy(base).eval()           # BatchNorm statistics stay frozen
-        working = Working(frames, params, int(getattr(base, "levels", 2)))
+        working = Working(frames, params, base)
         labels = mark_targets(base, working, marks, disk_radius, device)
         before = original_f1(base, device)
     for p in model.parameters():
@@ -363,13 +376,17 @@ def adapt(base, device, frames, marks: list[np.ndarray], params: dict, *,
                 taken = step + 1
                 with accelerator_lock(device):
                     k = int(rng.integers(0, 8))
-                    logit, off = model(_dihedral(labels["x"], k))
+                    outputs = model(_dihedral(labels["x"], k))
+                    logit, off = outputs[0], outputs[1]
                     hm_base = _dihedral(labels["hm_base"], k)
                     weight = _dihedral(labels["weight"], k)
                     loss = (_mark_loss(logit, _dihedral(labels["target"], k), weight)
                             + DISTILL_WEIGHT * _hold_loss(logit, hm_base, weight)
                             + OFFSET_WEIGHT * _offset_hold(off, _dihedral(labels["off_base"], k, offset=True),
                                                            hm_base))
+                    if labels["mask_base"] is not None:
+                        loss = loss + OFFSET_WEIGHT * _mask_hold(
+                            outputs[2], _dihedral(labels["mask_base"], k), hm_base)
                     if replay_weight:
                         loss = loss + replay_weight * _replay_loss(model, rng, device)
                     optimiser.zero_grad(set_to_none=True)
@@ -421,7 +438,7 @@ def preferred_input(model, device, *, size: int = ICON_SIZE, steps: int = 200, s
         x = (0.01 * torch.randn(1, 1, size, size, generator=generator)).to(device).requires_grad_(True)
         optimiser = torch.optim.Adam([x], lr=0.05)
         for _ in range(int(steps)):
-            logit, _ = model(x)
+            logit = model(x)[0]
             tv = (x[..., 1:, :] - x[..., :-1, :]).abs().mean() + (x[..., :, 1:] - x[..., :, :-1]).abs().mean()
             loss = -logit[0, 0, size // 2, size // 2] + 0.02 * (x ** 2).mean() + 0.3 * tv
             optimiser.zero_grad(set_to_none=True)

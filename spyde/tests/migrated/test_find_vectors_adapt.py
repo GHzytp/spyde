@@ -276,7 +276,7 @@ class TestAdapt:
         from spyde.models.adapt import DISK, NOT_DISK, Working, mark_targets
         base, device = models.get_model(None)
         frame = _disk_pattern()
-        working = Working([frame], PARAMS, int(base.levels))
+        working = Working([frame], PARAMS, base)
         marks = [np.array([[48.5, 14.5, NOT_DISK], [30.0, 30.0, DISK]])]
         labels = mark_targets(base, working, marks, 5.0, device)
         f = working.factor
@@ -295,18 +295,18 @@ class TestAdapt:
         from spyde.models.adapt import NOT_DISK, Working, adapt
         base, device = models.get_model(None)
         frames = [_disk_pattern(seed=s) for s in range(2)]
-        working = Working(frames, PARAMS, int(base.levels))
+        working = Working(frames, PARAMS, base)
         with torch.no_grad():
-            before = working.peaks(*base(working.x))
+            before = working.peaks(base(working.x))
         junk = [p for p in before[0] if np.hypot(p[0] - 48.5, p[1] - 14.5) < 5]
         if not junk:
             pytest.skip("the base model does not fire on the synthetic junk")
         marks = [np.array([[junk[0][0], junk[0][1], NOT_DISK]]), np.zeros((0, 3))]
         untouched = {k: v.clone() for k, v in base.state_dict().items()}
         model, report = adapt(base, device, frames, marks, PARAMS, steps=20)
-        held_out = Working([_disk_pattern(seed=9)], PARAMS, int(base.levels))
+        held_out = Working([_disk_pattern(seed=9)], PARAMS, base)
         with torch.no_grad():
-            after = held_out.peaks(*model(held_out.x))[0]
+            after = held_out.peaks(model(held_out.x))[0]
         near = lambda p, y, x: np.hypot(p[:, 0] - y, p[:, 1] - x).min() if len(p) else np.inf
         assert near(after, 48.5, 14.5) > 4                       # the junk is gone on a NEW pattern
         for cy, cx in ((30, 30), (30, 66), (66, 30), (66, 66)):   # and every disk is still found
@@ -321,10 +321,10 @@ class TestAdapt:
         from spyde.models.adapt import MIN_STEPS, NOT_DISK, Working, adapt, marks_learned
         base, device = models.get_model(None)
         frames = [_disk_pattern()]
-        junk = Working(frames, PARAMS, int(base.levels))
+        junk = Working(frames, PARAMS, base)
         import torch
         with torch.no_grad():
-            found = junk.peaks(*base(junk.x))[0]
+            found = junk.peaks(base(junk.x))[0]
         near_junk = [p for p in found if np.hypot(p[0] - 48.5, p[1] - 14.5) < 5]
         if not near_junk:
             pytest.skip("the base model does not fire on the synthetic junk")
@@ -339,6 +339,39 @@ class TestAdapt:
         assert capped["stopped"] in ("time", "steps", "learned") and capped["steps"] <= MIN_STEPS + 2
         _, fixed = adapt(base, device, frames, marks, PARAMS, until_learned=False, steps=3)
         assert fixed["steps"] == 3
+
+    @pytest.mark.parametrize("model_id", [None, "spotunet-dynamical-mask8-v1"])
+    def test_marks_are_checked_with_the_decode_detect_uses(self, cpu_models, model_id):
+        """``Working.peaks`` finds what ``detect`` finds on the same pattern, mask
+        head and normalisation floor included."""
+        import torch
+        from spyde import models
+        from spyde.models.adapt import Working
+        base, device = models.get_model(model_id)
+        frame = _disk_pattern()
+        working = Working([frame], PARAMS, base)
+        with torch.no_grad():
+            ours = working.peaks(base(working.x))[0]
+        theirs = models.detect(base, frame, device, thresh=PARAMS["threshold"],
+                               min_distance=PARAMS["min_distance"], bg_sigma=PARAMS["bg_sigma"],
+                               spot_diameter=2.0 * PARAMS["spot_radius"])
+        order = lambda p: p[np.lexsort((p[:, 1], p[:, 0]))]
+        assert len(ours) and ours.shape == theirs.shape
+        np.testing.assert_allclose(order(ours), order(theirs), atol=1e-4)
+
+    def test_a_mask_head_model_adapts_with_its_mask(self, cpu_models):
+        """A fit from the mask-head detector keeps the head, the operating point
+        and the base model untouched."""
+        import torch
+        from spyde import models
+        from spyde.models.adapt import NOT_DISK, adapt
+        base, device = models.get_model("spotunet-dynamical-mask8-v1")
+        untouched = {k: v.clone() for k, v in base.state_dict().items()}
+        model, report = adapt(base, device, [_disk_pattern()], [np.array([[48.5, 14.5, NOT_DISK]])],
+                              PARAMS, until_learned=False, steps=3)
+        assert report["steps"] == 3 and model.head_mask is not None
+        assert (model.mad_floor, model.default_threshold) == (base.mad_floor, base.default_threshold)
+        assert all(torch.equal(v, untouched[k]) for k, v in base.state_dict().items())
 
     def test_a_stopped_fit_raises_cancelled(self, cpu_models):
         from spyde import models
