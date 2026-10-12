@@ -22,6 +22,8 @@ const {
 
 const SHOTS = 'fv_adapt_shots'
 mkdirSync(SHOTS, { recursive: true })
+const LAYOUT_SHOTS = 'layout_shots'
+mkdirSync(LAYOUT_SHOTS, { recursive: true })
 
 let ctx: Awaited<ReturnType<typeof launchApp>>
 
@@ -143,6 +145,13 @@ async function shot(page: Page, name: string) {
     height: Math.max(a.y + a.height, b.y + b.height) - y + 12 } })
 }
 
+/** A screenshot of the caret alone, for judging its layout. */
+async function layoutShot(page: Page, name: string) {
+  const b = (await page.getByTestId('find-vectors-wizard').boundingBox())!
+  await page.screenshot({ path: join(LAYOUT_SHOTS, name), clip: {
+    x: b.x - 6, y: b.y - 6, width: b.width + 12, height: b.height + 12 } })
+}
+
 /** A screenshot of ``win`` (default: the pattern window) and the caret, grown to
  * take in the open model menu and its card when they are showing. */
 async function shotAll(page: Page, name: string, win?: any) {
@@ -173,6 +182,23 @@ test('double-click marks, adapt, revert', async () => {
   await expect(page.getByTestId('fv-teach')).toBeVisible()
   await backend.waitForLog('neural calibration:', 90_000)
   await page.waitForTimeout(3000)        // the caret adopts the calibration and re-tunes
+
+  // The layout: the heatmap switch sits beside Method, only the two refinements
+  // are out, the beam stop is under a collapsed Extra, and Save waits for a fit.
+  await expect(page.getByTestId('fv-show-transform')).toHaveAttribute('role', 'switch')
+  await expect(page.getByTestId('fv-show-transform')).not.toBeChecked()
+  await expect(page.getByTestId('fv-friedel')).toBeVisible()
+  await expect(page.getByTestId('fv-persistence')).toBeVisible()
+  await expect(page.getByTestId('fv-beamstop')).toHaveCount(0)
+  await expect(page.getByTestId('fv-model-save')).toBeDisabled()
+  await expect(page.getByTestId('fv-save-name-input')).toHaveCount(0)
+  await layoutShot(page, '01-default.png')
+  await page.getByTestId('fv-extra-toggle').click()
+  await expect(page.getByTestId('fv-extra-toggle')).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByTestId('fv-beamstop')).toBeVisible()
+  await layoutShot(page, '02-extra-open.png')
+  await page.getByTestId('fv-extra-toggle').click()
+  await expect(page.getByTestId('fv-beamstop')).toHaveCount(0)
 
   const { frame, box } = await figureFrame(page)
   await expect.poll(async () => (await blobs(frame, 'red')).blobs.length, {
@@ -277,14 +303,17 @@ test('double-click marks, adapt, revert', async () => {
   // threshold (the synthetic grains' weak reflections look much like what
   // was marked), not the wiring this spec checks — so it is reported, not gated.
   await shot(page, '04-adapted.png')
+  await layoutShot(page, '03-adapted.png')
 
-  // The fit is an unsaved draft: the Model dropdown shows it, a name field with
-  // "<dataset> adapted" sits under it, and in the open menu it is a dashed row
-  // after the divider. Enter in the name field keeps it as the user's model.
+  // The fit is an unsaved draft: the Model dropdown shows it, and in the open
+  // menu it is a dashed row after the divider. No name box shows until Save.
   const trigger = page.getByTestId('fv-model')
   const taught = page.locator('[data-testid^="fv-model-opt-spotunet-taught-"]')
+  const save = page.getByTestId('fv-model-save')
+  const nameInput = page.getByTestId('fv-save-name-input')
   await expect(trigger).toContainText('Unsaved: test_data_si_grains adapted')
-  await expect(page.getByTestId('fv-model-name-input')).toHaveValue('test_data_si_grains adapted')
+  await expect(nameInput).toHaveCount(0)
+  await expect(save).toBeEnabled()
   await shotAll(page, '05-draft-collapsed.png')
   await trigger.click()
   await expect(taught).toHaveCount(1)
@@ -296,10 +325,23 @@ test('double-click marks, adapt, revert', async () => {
   await shotAll(page, '06-draft-row-open.png')
   await page.keyboard.press('Escape')
   await expect(taught).toHaveCount(0)
-  await page.getByTestId('fv-model-name-input').fill('Si grains, junk removed')
-  await page.getByTestId('fv-model-name-input').press('Enter')
+  // Save asks for the name, prefilled "<dataset> adapted". Escape puts the box
+  // away without closing the caret; Enter keeps the model as the user's.
+  await save.click()
+  await expect(nameInput).toHaveValue('test_data_si_grains adapted')
+  await expect(nameInput).toBeFocused()
+  await nameInput.press('Escape')
+  await expect(nameInput).toHaveCount(0)
+  await expect(page.getByTestId('find-vectors-wizard')).toBeVisible()
+  await expect(trigger).toContainText('Unsaved: test_data_si_grains adapted')
+  await save.click()
+  await nameInput.fill('Si grains, junk removed')
+  await layoutShot(page, '04-save-name.png')
+  await nameInput.press('Enter')
   await expect(trigger).toContainText('Si grains, junk removed', { timeout: 20_000 })
-  await expect(page.getByTestId('fv-model-name-input')).toHaveCount(0)
+  await expect(nameInput).toHaveCount(0)
+  await expect(save).toBeDisabled()
+  await layoutShot(page, '05-saved.png')
   const taughtId = await trigger.getAttribute('data-value')
 
   // Its card: where it came from, what it was taught on, how general it still is.

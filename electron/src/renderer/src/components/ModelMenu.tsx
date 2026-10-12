@@ -9,13 +9,16 @@
  * initials. Hovering a row, or moving to it with the keys, shows its card: the
  * full description, the chain it came from, what it was taught on, when, how
  * many marks, how general it still is. A taught model's row has a ⋯ with Rename
- * and Delete.
+ * and Delete. With `onRefresh`, the open menu ends in a "Check for new models"
+ * row that asks for the latest registry without closing the menu, so the new
+ * rows appear where the user is already looking.
  *
  * Keyboard: Enter / Space / ↓ open; ↑ ↓ move; Enter picks; Esc closes.
  * Testing (the themed-dropdown pattern — not a <select>): click the trigger
  * (`testid`, carrying `data-value`), then `${testid}-opt-${id}`. The divider is
  * `${testid}-divider`, the card `${testid}-card`, a row's ⋯ `${testid}-more-${id}`,
- * then `${testid}-rename` / `${testid}-rename-input` / `${testid}-delete`.
+ * then `${testid}-rename` / `${testid}-rename-input` / `${testid}-delete`, and the
+ * refresh row `${testid}-refresh`.
  */
 import React from 'react'
 
@@ -45,7 +48,7 @@ export function initials(label: string): string {
 
 export function subtitle(m: ModelInfo): string {
   if (!m.taught) return 'built-in'
-  if (m.unsaved) return 'not saved yet — name it below'
+  if (m.unsaved) return 'not saved yet — Save to keep it'
   const f1 = typeof m.original_f1 === 'number' ? ` · F1 ${m.original_f1.toFixed(2)}` : ''
   return `taught on ${m.trained_on ?? 'a dataset'}${f1}`
 }
@@ -56,12 +59,13 @@ function Icon({ model, size }: { model: ModelInfo | undefined; size: number }) {
   return <span style={{ ...style, fontSize: Math.round(size * 0.36) }}>{model ? initials(model.label) : '?'}</span>
 }
 
-export function ModelMenu({ models, value, onChange, onRename, onDelete, testid }: {
+export function ModelMenu({ models, value, onChange, onRename, onDelete, onRefresh, testid }: {
   models: readonly ModelInfo[]
   value: string
   onChange: (id: string) => void
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+  onRefresh?: () => void
   testid: string
 }) {
   const vendored = models.filter((m) => m.group !== 'local')
@@ -225,6 +229,13 @@ export function ModelMenu({ models, value, onChange, onRename, onDelete, testid 
               </div>
             )}
             {local.map(row)}
+            {onRefresh && (
+              <button type="button" data-testid={`${testid}-refresh`} style={refreshRow}
+                title="Check Hugging Face for new models"
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setCard(null)}
+                onClick={onRefresh}>↻ Check for new models</button>
+            )}
           </div>
           {card && <ModelCard model={card.model} top={card.top} testid={`${testid}-card`} />}
         </div>
@@ -302,6 +313,11 @@ const divider: React.CSSProperties = {
   paddingTop: 3,
 }
 const dividerLabel: React.CSSProperties = { fontSize: 9.5, color: '#6c7086', textTransform: 'uppercase', letterSpacing: 0.5 }
+const refreshRow: React.CSSProperties = {
+  display: 'block', width: '100%', boxSizing: 'border-box', textAlign: 'left', marginTop: 4,
+  background: 'transparent', color: '#a6adc8', border: 'none', borderTop: '1px solid #313244',
+  borderRadius: 0, padding: '5px 6px 2px', fontSize: 10.5, cursor: 'pointer',
+}
 const moreBtn: React.CSSProperties = {
   flex: '0 0 auto', background: 'transparent', border: 'none', color: '#a6adc8', cursor: 'pointer',
   fontSize: 14, padding: '0 4px', borderRadius: 4,

@@ -231,6 +231,41 @@ export function Check({ checked, onChange, label, testid }: {
   )
 }
 
+/** An on/off switch small enough to sit beside another control on its row,
+ *  where a checkbox with its label would cost a line of its own. It is a
+ *  `role="switch"`, so it reads as checked/unchecked like a checkbox does. */
+export function Toggle({ checked, onChange, label, testid, title }: {
+  checked: boolean; onChange: (b: boolean) => void; label: string; testid: string; title?: string
+}) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} data-testid={testid} title={title}
+      style={S.toggle} onClick={() => onChange(!checked)}>
+      <span style={{ ...S.toggleTrack, ...(checked ? S.toggleTrackOn : null) }}>
+        <span style={{ ...S.toggleKnob, ...(checked ? S.toggleKnobOn : null) }} />
+      </span>
+      {label}
+    </button>
+  )
+}
+
+/** A collapsed section under a `›` that turns down when it opens. The caller
+ *  owns `open`, so a wizard can remember it with the rest of its settings.
+ *  The button is `${testid}-toggle`; the opened content is `testid`. */
+export function Disclosure({ label, open, onToggle, testid, children }: {
+  label: string; open: boolean; onToggle: () => void; testid: string; children: React.ReactNode
+}) {
+  return (
+    <div style={S.disclosure}>
+      <button type="button" data-testid={`${testid}-toggle`} aria-expanded={open}
+        style={S.disclosureButton} onClick={onToggle}>
+        <span style={{ ...S.chevron, ...(open ? S.chevronOpen : null) }}>›</span>
+        {label}
+      </button>
+      {open && <div data-testid={testid} style={S.page}>{children}</div>}
+    </div>
+  )
+}
+
 const POP_BG = '#1e1e2e'
 export const S: Record<string, React.CSSProperties> = {
   box: {
@@ -263,6 +298,32 @@ export const S: Record<string, React.CSSProperties> = {
   sliderRow: { display: 'flex', alignItems: 'center', gap: 4 },
   sliderVal: { fontSize: 10, color: '#cdd6f4', minWidth: 28, textAlign: 'right' },
   check: { fontSize: 11, color: '#cdd6f4', display: 'flex', alignItems: 'center', gap: 6 },
+  toggle: {
+    display: 'flex', alignItems: 'center', gap: 5, flex: '0 0 auto', background: 'none', border: 'none',
+    padding: 0, color: '#a6adc8', fontSize: 10, cursor: 'pointer', whiteSpace: 'nowrap',
+  },
+  toggleTrack: {
+    position: 'relative', width: 22, height: 12, borderRadius: 6, background: '#313244',
+    border: '1px solid #45475a', boxSizing: 'border-box', flex: '0 0 auto', transition: 'background 0.12s',
+  },
+  toggleTrackOn: { background: '#89b4fa', borderColor: '#89b4fa' },
+  toggleKnob: {
+    position: 'absolute', top: 1, left: 1, width: 8, height: 8, borderRadius: 4,
+    background: '#a6adc8', transition: 'left 0.12s',
+  },
+  toggleKnobOn: { left: 11, background: '#11111b' },
+  disclosure: {
+    borderTop: '1px solid #313244', paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 6,
+  },
+  disclosureButton: {
+    display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#a6adc8',
+    cursor: 'pointer', fontSize: 10, padding: 0, textAlign: 'left', alignSelf: 'flex-start',
+  },
+  chevron: {
+    display: 'inline-block', width: 8, textAlign: 'center', fontSize: 12, lineHeight: 1,
+    transition: 'transform 0.12s',
+  },
+  chevronOpen: { transform: 'rotate(90deg)' },
   hint: { fontSize: 10, color: '#6c7086', fontStyle: 'italic' },
   fileBtn: { background: '#313244', color: '#cdd6f4', border: '1px solid #45475a', borderRadius: 4, padding: '4px 8px', fontSize: 11, cursor: 'pointer', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', alignSelf: 'flex-start' },
   primary: { background: '#89b4fa', color: '#11111b', border: 'none', borderRadius: 5, padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' },

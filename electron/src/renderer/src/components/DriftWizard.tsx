@@ -36,7 +36,7 @@
  * model's provenance, which is worse than the missing feature.
  */
 import React from 'react'
-import { WizardShell, TabRow, Field, NumInput, Select, Check, S } from './WizardShell'
+import { WizardShell, TabRow, Field, NumInput, Select, Check, Disclosure, S } from './WizardShell'
 import { useWizardLifecycle, useDebouncedAction, useWizardEvent, CommitButton } from './wizardHooks'
 import type { SendAction } from './wizardHooks'
 
@@ -267,7 +267,8 @@ export function DriftWizard({ caretPos, windowId, sendAction, onClose }: Props) 
         </>
       )}
 
-      <Advanced open={advanced} onToggle={() => setAdvanced(v => !v)}>
+      <Disclosure label="Advanced" testid="drift-advanced" open={advanced}
+        onToggle={() => setAdvanced(v => !v)}>
         <TabRow
           tabs={TABS} active={TAB_OF[method]} onSelect={onMethod}
           locked={(t) => Boolean(UNAVAILABLE[METHOD_OF[t]])}
@@ -306,7 +307,7 @@ export function DriftWizard({ caretPos, windowId, sendAction, onClose }: Props) 
           {nFrames ? `${nFrames} frames` : 'reading the movie…'}
           {solved ? ' · solved' : ''}
         </div>
-      </Advanced>
+      </Disclosure>
     </WizardShell>
   )
 }
@@ -339,28 +340,6 @@ function RoiReadout({ preview, useRoi }: { preview: Preview | null; useRoi: bool
   )
 }
 
-// ── the Advanced disclosure ──────────────────────────────────────────────────
-
-/**
- * Collapsed by default (plan §0.9a). Deliberately local to this file rather
- * than added to WizardShell: the shell is shared with carets another change is
- * editing right now, and a disclosure is six lines.
- */
-function Advanced({ open, onToggle, children }: {
-  open: boolean; onToggle: () => void; children: React.ReactNode
-}) {
-  return (
-    <div style={advancedWrap}>
-      <button data-testid="drift-advanced-toggle" style={discloseStyle} onClick={onToggle}>
-        {open ? '▾' : '▸'} Advanced
-      </button>
-      {open && (
-        <div data-testid="drift-advanced" style={S.page}>{children}</div>
-      )}
-    </div>
-  )
-}
-
 const readoutStyle: React.CSSProperties = {
   fontSize: 10, fontVariantNumeric: 'tabular-nums',
 }
@@ -384,12 +363,4 @@ const btnRowStyle: React.CSSProperties = {
 const ghostStyle: React.CSSProperties = {
   background: '#313244', color: '#cdd6f4', border: '1px solid #45475a',
   borderRadius: 5, padding: '6px 10px', fontSize: 12, cursor: 'pointer',
-}
-const advancedWrap: React.CSSProperties = {
-  borderTop: '1px solid #313244', paddingTop: 4,
-  display: 'flex', flexDirection: 'column', gap: 6,
-}
-const discloseStyle: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#a6adc8', cursor: 'pointer',
-  fontSize: 10, padding: 0, textAlign: 'left', alignSelf: 'flex-start',
 }

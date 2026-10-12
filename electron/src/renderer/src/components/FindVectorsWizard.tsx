@@ -17,10 +17,11 @@
  *     (user decision 2026-07-16): Spot size (auto-seeded; drives the model's
  *     canonical rescale + NMS + marker radius) and Threshold (model confidence,
  *     ~0.3). Nav blur is never applied for neural; the high-pass (bg σ) is
- *     auto-calibrated invisibly (`fv_calibration`). Model dropdown + ↻ refresh
- *     from the registry (`fv_models`). Every disk's centre is refined on the
- *     raw frame; the "Friedel partner" checkbox adds the step that also reads
- *     each disk's Friedel mirror (spyde.models.centre_refine). The default method.
+ *     auto-calibrated invisibly (`fv_calibration`). Model dropdown from the
+ *     registry (`fv_models`); its last row checks Hugging Face for new ones.
+ *     Every disk's centre is refined on the raw frame; the "Friedel partner"
+ *     checkbox adds the step that also reads each disk's Friedel mirror
+ *     (spyde.models.centre_refine). The default method.
  *   • NXCORR — window-normalised cross-correlation against a flat disk
  *     (Disk Radius slider; threshold is a [-1,1] correlation score).
  *   • DoG — Difference-of-Gaussians band-pass, best for small (2-3 px) spots
@@ -31,12 +32,12 @@
  * pattern → "a disk is here", a mark → removed. It refits a copy of the model
  * about a second after the last mark and reports `fv_adapt_state`; the caret
  * adopts the taught model as its Model so the preview and Compute both use it.
- * A fit is an unsaved draft until it is named (the name field under the Model
- * dropdown, Enter saves); named models are offered on every dataset, can be
- * renamed or deleted from the dropdown's rows, and can be adapted again.
+ * A fit is an unsaved draft until it is named (Save beside Adapt / Revert asks
+ * for a name); named models are offered on every dataset, can be renamed or
+ * deleted from the dropdown's rows, and can be adapted again.
  */
 import React from 'react'
-import { WizardShell, Field, Slider, Select, Check, S } from './WizardShell'
+import { WizardShell, Slider, Select, Check, Toggle, Disclosure, S } from './WizardShell'
 import { useWizardLifecycle, useDebouncedAction, useWizardEvent } from './wizardHooks'
 import { ModelMenu, ModelInfo } from './ModelMenu'
 
@@ -64,7 +65,7 @@ interface FvSaved {
   sigma1: number; sigma2: number; bgSigma: number
   threshold: number; minDist: number; subpixel: boolean; beamstop: boolean
   beamstopDilate: number; showTransform: boolean; persistence: boolean
-  friedelPartner: boolean
+  friedelPartner: boolean; extraOpen: boolean
 }
 const _fvStore = new Map<number, FvSaved>()
 
@@ -91,19 +92,24 @@ export function FindVectorsWizard({ caretPos, windowId, sendAction, onClose }: P
   const [showTransform, setShowTransform] = React.useState(saved?.showTransform ?? false)
   const [persistence, setPersistence] = React.useState(saved?.persistence ?? false)
   const [friedelPartner, setFriedelPartner] = React.useState(saved?.friedelPartner ?? true)
+  const [extraOpen, setExtraOpen] = React.useState(saved?.extraOpen ?? false)
   const [status, setStatus] = React.useState('Tune the parameters — peaks preview under the crosshair.')
   const [estimating, setEstimating] = React.useState(true)
   // Controls the user has moved by hand since this caret opened.
   const handEdited = React.useRef(new Set<'radius' | 'minDist' | 'threshold'>())
   const [teach, setTeach] = React.useState<TeachState>(TEACH_EMPTY)
+  // The draft the Save name box was opened for. Keyed by id rather than a flag,
+  // so the box survives the brief moments a state update leaves no draft in
+  // use, yet never reopens over a different, later draft.
+  const [namingModelId, setNamingModelId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     _fvStore.set(windowId, {
       method, modelId, sigma, radius, sigma1, sigma2, bgSigma, threshold, minDist, subpixel,
-      beamstop, beamstopDilate, showTransform, persistence, friedelPartner,
+      beamstop, beamstopDilate, showTransform, persistence, friedelPartner, extraOpen,
     })
   }, [windowId, method, modelId, sigma, radius, sigma1, sigma2, bgSigma, threshold, minDist,
-      subpixel, beamstop, beamstopDilate, showTransform, persistence, friedelPartner])
+      subpixel, beamstop, beamstopDilate, showTransform, persistence, friedelPartner, extraOpen])
 
   // Live refs so the debounced tune always sends the latest of EVERY control.
   const vals = React.useRef({ method, modelId, sigma, radius, sigma1, sigma2, bgSigma, threshold, minDist, subpixel, beamstop, beamstopDilate, showTransform, persistence, friedelPartner })
@@ -262,27 +268,35 @@ export function FindVectorsWizard({ caretPos, windowId, sendAction, onClose }: P
 
   const isDog = method === 'dog'
   const isNeural = method === 'neural'
+  // Save names the fit just made: the model in use is the taught one, still a draft.
+  const currentModel = models.find((m) => m.id === modelId)
+  const unsavedModel = currentModel?.unsaved && currentModel.id === teach.taught ? currentModel : undefined
 
   return (
     <WizardShell testid="find-vectors-wizard" title="Find Diffraction Vectors" posStyle={caretPos}
       onClose={onClose} closeTestid="fv-close" status={status} statusTestid="fv-status"
       width={320}>
       <div style={S.hint}>Move the crosshair on the navigator to preview the found peaks.</div>
-      <Field label="Method">
-        <Select testid="fv-method" value={method} options={METHODS} onChange={onMethod} />
-      </Field>
+      <div style={rowStyle}>
+        <label style={rowLabelStyle}>Method</label>
+        <div style={growStyle}>
+          <Select testid="fv-method" value={method} options={METHODS} onChange={onMethod} />
+        </div>
+        <Toggle testid="fv-show-transform" checked={showTransform} onChange={live(setShowTransform)}
+          label={isDog ? 'DoG' : isNeural ? 'Heatmap' : 'Corr.'}
+          title={isDog ? 'Show the band-passed image instead of the pattern'
+            : isNeural ? "Show the network's disk heatmap instead of the pattern"
+            : 'Show the correlation map instead of the pattern'} />
+      </div>
       {isNeural && models.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <div style={modelRowStyle}>
-            <label style={{ ...S.lbl, flex: 1 }}>Model</label>
-            <button data-testid="fv-refresh-models" style={refreshBtnStyle}
-              title="Check Hugging Face for new models" onClick={refreshModels}>↻</button>
+        <div style={rowStyle}>
+          <label style={rowLabelStyle}>Model</label>
+          <div style={growStyle}>
+            <ModelMenu testid="fv-model" models={models} value={modelId} onChange={live(setModelId)}
+              onRename={(id, name) => sendRef.current('fv_model_name', { model_id: id, name }, windowId)}
+              onDelete={(id) => sendRef.current('fv_model_delete', { model_id: id }, windowId)}
+              onRefresh={refreshModels} />
           </div>
-          <ModelMenu testid="fv-model" models={models} value={modelId} onChange={live(setModelId)}
-            onRename={(id, name) => sendRef.current('fv_model_name', { model_id: id, name }, windowId)}
-            onDelete={(id) => sendRef.current('fv_model_delete', { model_id: id }, windowId)} />
-          <NameDraft model={models.find((m) => m.id === modelId)} teach={teach}
-            send={(action, payload) => sendRef.current(action, payload, windowId)} />
         </div>
       )}
       <div style={gridStyle}>
@@ -331,22 +345,16 @@ export function FindVectorsWizard({ caretPos, windowId, sendAction, onClose }: P
               onChange={byHand('minDist', setMinDist)} />
           </Cell>
         )}
-        {beamstop && (
-          <Cell label="Beam-stop dilate">
-            <Slider testid="fv-beamstop-dilate" value={beamstopDilate} min={0} max={20} step={1}
-              onChange={live(setBeamstopDilate)} />
-          </Cell>
-        )}
       </div>
       <div style={gridStyle}>
-        <Check testid="fv-beamstop" checked={beamstop} onChange={live(setBeamstop)}
-          label="Mask beam stop" />
-        <Check testid="fv-show-transform" checked={showTransform} onChange={live(setShowTransform)}
-          label={isDog ? 'Show DoG' : isNeural ? 'Show heatmap' : 'Show corr.'} />
         {!isNeural && (
           // The net always emits subpixel offsets — the toggle is a no-op there.
           <Check testid="fv-subpixel" checked={subpixel} onChange={live(setSubpixel)}
             label="Subpixel" />
+        )}
+        {isNeural && (
+          <Check testid="fv-friedel" checked={friedelPartner} onChange={live(setFriedelPartner)}
+            label="Friedel partner" />
         )}
         {isNeural && (
           // Batch-only stage-2 refine (scan-neighbour persistence + Friedel);
@@ -354,27 +362,43 @@ export function FindVectorsWizard({ caretPos, windowId, sendAction, onClose }: P
           <Check testid="fv-persistence" checked={persistence} onChange={live(setPersistence)}
             label="Neighbor refine" />
         )}
-        {isNeural && (
-          <Check testid="fv-friedel" checked={friedelPartner} onChange={live(setFriedelPartner)}
-            label="Friedel partner" />
-        )}
       </div>
+      <Disclosure label="Extra" testid="fv-extra" open={extraOpen} onToggle={() => setExtraOpen((v) => !v)}>
+        <Check testid="fv-beamstop" checked={beamstop} onChange={live(setBeamstop)}
+          label="Mask beam stop" />
+        {beamstop && (
+          <Cell label="Beam-stop dilate">
+            <Slider testid="fv-beamstop-dilate" value={beamstopDilate} min={0} max={20} step={1}
+              onChange={live(setBeamstopDilate)} />
+          </Cell>
+        )}
+      </Disclosure>
       {isNeural && (
         <div data-testid="fv-teach" style={teachStyle}
           title={'Double-click a circle that is not a disk, or a disk it missed; double-click a mark to remove it. '
             + 'The model is refitted on your marks about a second after the last one.'}>
+          <span data-testid="fv-teach-count">
+            {teach.marks === 0
+              ? 'Teach: double-click a wrong circle or a missed disk'
+              : `Teach: ${teach.notDisk} wrong · ${teach.disk} missed${teach.busy ? ' — adapting…' : ''}`}
+          </span>
           <div style={teachRowStyle}>
-            <span data-testid="fv-teach-count" style={{ flex: 1 }}>
-              {teach.marks === 0
-                ? 'Teach: double-click a wrong circle or a missed disk'
-                : `Teach: ${teach.notDisk} wrong · ${teach.disk} missed${teach.busy ? ' — adapting…' : ''}`}
-            </span>
-            <button data-testid="fv-adapt" style={smallBtnStyle} disabled={teach.marks === 0 || teach.busy}
-              onClick={() => sendRef.current('fv_adapt', {}, windowId)}>Adapt</button>
-            <button data-testid="fv-adapt-revert" style={smallBtnStyle}
-              disabled={teach.marks === 0 && !teach.taught}
-              onClick={() => sendRef.current('fv_adapt_revert', {}, windowId)}>Revert</button>
+            <SmallButton testid="fv-adapt" disabled={teach.marks === 0 || teach.busy}
+              onClick={() => sendRef.current('fv_adapt', {}, windowId)}>Adapt</SmallButton>
+            <SmallButton testid="fv-adapt-revert" disabled={teach.marks === 0 && !teach.taught}
+              onClick={() => sendRef.current('fv_adapt_revert', {}, windowId)}>Revert</SmallButton>
+            <SmallButton testid="fv-model-save" disabled={!unsavedModel}
+              title={unsavedModel ? 'Name the adapted model to keep it' : 'Adapt first: there is no unsaved model'}
+              onClick={() => setNamingModelId(unsavedModel?.id ?? null)}>Save</SmallButton>
           </div>
+          {unsavedModel && namingModelId === unsavedModel.id && (
+            <SaveName initial={teach.defaultName || unsavedModel.label}
+              onCancel={() => setNamingModelId(null)}
+              onSave={(name) => {
+                sendRef.current('fv_model_name', { model_id: unsavedModel.id, name }, windowId)
+                setNamingModelId(null)
+              }} />
+          )}
           {teach.taught && teach.originalF1 !== null && (
             <div data-testid="fv-teach-gauge"
               style={{ color: teach.originalF1 < 0.7 ? '#ff9a3c' : '#a6adc8' }}
@@ -408,54 +432,64 @@ const TEACH_EMPTY: TeachState = {
   learned: null, learnable: null, originalF1: null, originalF1Base: null,
 }
 
-/** Under the Model dropdown: name the fit that was just made (Enter saves). A
- * named model's Rename / Delete live on its row in the dropdown. */
-function NameDraft({ model, teach, send }: {
-  model: ModelInfo | undefined
-  teach: TeachState
-  send: (action: string, payload: Record<string, unknown>) => void
+/** The name box Save opens under the teach buttons: Enter or ✓ saves, Escape
+ * or ✕ puts it away. Prefilled with the backend's suggested name. */
+function SaveName({ initial, onSave, onCancel }: {
+  initial: string; onSave: (name: string) => void; onCancel: () => void
 }) {
-  const naming = Boolean(model?.unsaved && model.id === teach.taught)
-  const [text, setText] = React.useState('')
-  React.useEffect(() => {
-    setText(teach.defaultName || model?.label || '')
-  }, [model?.id, naming, teach.defaultName])  // eslint-disable-line react-hooks/exhaustive-deps
-  if (!naming || !model) return null
+  const [text, setText] = React.useState(initial)
   const save = () => {
     const name = text.trim()
-    if (name) send('fv_model_name', { model_id: model.id, name })
+    if (name) onSave(name)
   }
   return (
-    <div style={actionRowStyle}>
-      <input data-testid="fv-model-name-input" style={{ ...S.num, flex: 1, minWidth: 0 }} value={text}
-        placeholder="Name this model" onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') save() }} />
-      <button data-testid="fv-model-save" style={smallBtnStyle} disabled={!text.trim()} onClick={save}>Save</button>
+    <div style={saveNameStyle}>
+      <input data-testid="fv-save-name-input" style={{ ...S.num, flex: 1, minWidth: 0 }} value={text}
+        autoFocus onFocus={(e) => e.target.select()} placeholder="Name this model"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save()
+          // Escape belongs to this box, not to whatever else listens for it.
+          if (e.key === 'Escape') { e.stopPropagation(); onCancel() }
+        }} />
+      <SmallButton testid="fv-save-name-confirm" disabled={!text.trim()} title="Save"
+        onClick={save}>✓</SmallButton>
+      <SmallButton testid="fv-save-name-cancel" title="Cancel" onClick={onCancel}>✕</SmallButton>
     </div>
   )
 }
-const actionRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4 }
+const saveNameStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 4, padding: 4,
+  background: '#181825', border: '1px solid #313244', borderRadius: 5,
+}
 const teachStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11,
   borderTop: '1px solid #333', paddingTop: 6,
 }
 const teachRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 4 }
-const smallBtnStyle: React.CSSProperties = {
+const smallButtonStyle: React.CSSProperties = {
   flex: '0 0 auto', padding: '1px 6px', fontSize: 11, background: 'transparent', color: 'inherit',
   border: '1px solid #555', borderRadius: 4, cursor: 'pointer',
+}
+const smallButtonDisabledStyle: React.CSSProperties = { opacity: 0.4, cursor: 'default' }
+
+/** The teach row's buttons: dimmed when there is nothing for them to do. */
+function SmallButton({ testid, disabled = false, title, onClick, children }: {
+  testid: string; disabled?: boolean; title?: string; onClick: () => void; children: React.ReactNode
+}) {
+  return (
+    <button data-testid={testid} disabled={disabled} title={title} onClick={onClick}
+      style={{ ...smallButtonStyle, ...(disabled ? smallButtonDisabledStyle : null) }}>{children}</button>
+  )
 }
 
 const gridStyle: React.CSSProperties = {
   display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 10, rowGap: 6,
 }
-const modelRowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 4, minWidth: 0,
-}
-const refreshBtnStyle: React.CSSProperties = {
-  flex: '0 0 auto', width: 22, height: 22, padding: 0, lineHeight: '20px',
-  background: 'transparent', color: 'inherit', border: '1px solid #444',
-  borderRadius: 4, cursor: 'pointer',
-}
+const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }
+// One width for both row labels, so the Method and Model controls line up.
+const rowLabelStyle: React.CSSProperties = { ...S.lbl, flex: '0 0 auto', width: 36 }
+const growStyle: React.CSSProperties = { flex: 1, minWidth: 0 }
 const cellStyle: React.CSSProperties = {
   display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0,
 }

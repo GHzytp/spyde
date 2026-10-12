@@ -27,7 +27,7 @@
  * CLAUDE.md), so `test_dpc_action.py` parses this file and compares.
  */
 import React from 'react'
-import { WizardShell, TabRow, Field, NumInput, Slider, Select, Check, Info, S } from './WizardShell'
+import { WizardShell, TabRow, Field, NumInput, Slider, Select, Check, Info, Disclosure, S } from './WizardShell'
 import { useWizardLifecycle, useDebouncedAction, useWizardEvent, CommitButton } from './wizardHooks'
 import type { SendAction } from './wizardHooks'
 
@@ -162,6 +162,7 @@ interface Props {
 export function DpcWizard({ caretPos, windowId, sendAction, onClose }: Props) {
   const saved = _dpcStore.get(windowId) ?? DEFAULTS
   const [tab, setTab] = React.useState<Tab>('Center')
+  const [advanced, setAdvanced] = React.useState(false)
   const [method, setMethod] = React.useState(saved.method)
   const [halfSquareWidth, setHalfSquareWidth] = React.useState(saved.halfSquareWidth)
   const [centerMode, setCenterMode] = React.useState<CenterMode>(saved.centerMode)
@@ -452,7 +453,8 @@ export function DpcWizard({ caretPos, windowId, sendAction, onClose }: Props) {
             )}
           </div>
 
-          <Advanced testid="dpc-advanced">
+          <Disclosure label="Advanced" testid="dpc-advanced" open={advanced}
+            onToggle={() => setAdvanced(v => !v)}>
             <Field label="Beam finder">
               <Select testid="dpc-method" value={method} options={METHOD_OPTIONS}
                 onChange={setMethod} />
@@ -464,7 +466,7 @@ export function DpcWizard({ caretPos, windowId, sendAction, onClose }: Props) {
             </Field>
             <button data-testid="dpc-remeasure" style={ghostStyle}
               onClick={remeasure}>Re-measure</button>
-          </Advanced>
+          </Disclosure>
         </div>
       )}
 
@@ -699,18 +701,6 @@ function cornerBoxSize(navShape: number[], fraction: number): string {
   return `${hx}×${hy} px`
 }
 
-/** Collapsed disclosure — the same shape DriftWizard uses (plan §0.9a). */
-function Advanced({ testid, children }: { testid: string; children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false)
-  return (
-    <div style={advancedWrap}>
-      <button data-testid={`${testid}-toggle`} style={discloseStyle}
-        onClick={() => setOpen(v => !v)}>{open ? '▾' : '▸'} Advanced</button>
-      {open && <div data-testid={testid} style={S.page}>{children}</div>}
-    </div>
-  )
-}
-
 const readoutStyle: React.CSSProperties = {
   fontSize: 10, fontVariantNumeric: 'tabular-nums',
 }
@@ -732,12 +722,4 @@ const ghostStyle: React.CSSProperties = {
   background: '#313244', color: '#cdd6f4', border: '1px solid #45475a',
   borderRadius: 5, padding: '5px 9px', fontSize: 11, cursor: 'pointer',
   alignSelf: 'flex-start',
-}
-const advancedWrap: React.CSSProperties = {
-  borderTop: '1px solid #313244', paddingTop: 4,
-  display: 'flex', flexDirection: 'column', gap: 6,
-}
-const discloseStyle: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#a6adc8', cursor: 'pointer',
-  fontSize: 10, padding: 0, textAlign: 'left', alignSelf: 'flex-start',
 }
