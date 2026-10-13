@@ -25,7 +25,10 @@ let ctx: Awaited<ReturnType<typeof launchApp>>
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(600_000)
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
+  // The scan downloads on a cold cache, and the wait below allows 300 s for it.
+  // test.setTimeout above does not reach hooks, which otherwise stop at 120 s.
+  testInfo.setTimeout(420_000)
   // SPYDE_GPU_IMAGE=0 forces anyplotlib's Canvas2D reference renderer.
   // Load-bearing for the MEASUREMENT, not the behaviour: a full-size SPED-Ag
   // frame renders on the GPU canvas, where getContext('2d') returns null and
