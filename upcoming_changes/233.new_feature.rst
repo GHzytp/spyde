@@ -1,0 +1,1 @@
+A figure saved in a report reopens as an interactive figure you can pan and zoom, even when the data it came from is not loaded, instead of as a flat picture.
