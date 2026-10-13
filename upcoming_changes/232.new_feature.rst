@@ -1,0 +1,1 @@
+In Present mode all four split layouts render as chosen (text above or below the picture as well as beside it), text slides scale their type to fill the stage, and a PNG dropped on a split slide's picture slot fills that slot instead of being added below.
