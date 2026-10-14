@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 SUPPORTED_EXTS = (
     ".hspy", ".zspy", ".mrc", ".tif", ".tiff", ".de5", ".csb",
     ".dm3", ".dm4",          # Gatan DigitalMicrograph
-    ".emd",                  # Velox and Berkeley EMD
+    ".emd",                  # Velox (incl. EDS spectrum images) and Berkeley EMD
     ".mib",                  # Quantum Detectors Merlin (beside its .hdr)
     ".blo",                  # NanoMegas / ASTAR blockfile
     ".rpl",                  # Ripple header (beside its .raw)

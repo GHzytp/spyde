@@ -10,10 +10,12 @@ zeros; one that read everything at open still returns the original pixels.
 (``.emd`` keeps its HDF5 file open, which Windows will not let us overwrite, so
 it is checked by what the lazy array wraps instead.)
 
-The DigitalMicrograph and Merlin fixtures under ``data/lazy_formats`` are from
-the RosettaSciIO test suite (GPL-3.0): ``digitalmicrograph/3D/test-1.dm4`` and
-``quantumdetector/Merlin_navigation4x2_signalNx256_ROI.zip``. Neither format
-has a writer to make one here.
+The DigitalMicrograph, Merlin and Velox fixtures under ``data/lazy_formats``
+are from the RosettaSciIO test suite (GPL-3.0):
+``digitalmicrograph/3D/test-1.dm4``,
+``quantumdetector/Merlin_navigation4x2_signalNx256_ROI.zip`` and
+``emd/velox_emd_v11_elementSelection.zip``. None of the three formats has a
+writer to make one here.
 """
 from __future__ import annotations
 
@@ -143,6 +145,29 @@ class TestTheListIsLazy:
                    and v.nbytes >= signal.data.nbytes]
         assert not wrapped, "the lazy .emd array wraps an in-memory copy"
         assert np.any(_first_frame(signal))
+
+    def test_a_velox_eds_spectrum_image_opens_lazily(self, tmp_path):
+        """Velox stores an EDS spectrum image as an event stream. RosettaSciIO
+        reads the stream (the compact form) at open and builds the dense cube
+        chunk by chunk, so the cube itself must never be held in memory; this
+        needs the ``sparse`` package, which is why it is a dependency."""
+        with zipfile.ZipFile(DATA / "velox_eds_si.zip") as archive:
+            archive.extractall(tmp_path)
+        path = next(tmp_path.glob("*.emd"))
+        signals = FileLoaderMixin.load_aligned(str(path))
+        signals = signals if isinstance(signals, list) else [signals]
+        cubes = [s for s in signals if s.axes_manager.navigation_dimension == 2
+                 and s.axes_manager.signal_dimension == 1]
+        assert len(cubes) == 1, "no spectrum image among the signals read"
+        cube = cubes[0]
+        assert hasattr(cube.data, "dask")
+        assert cube.metadata.get_item("Signal.signal_type") == "EDS_TEM"
+        _assert_whole_frame_chunks(cube)
+        held = [v for v in dict(cube.data.dask).values()
+                if isinstance(v, np.ndarray) and v.nbytes >= cube.data.nbytes]
+        assert not held, "the dense spectrum image is held in memory"
+        spectrum = np.asarray(cube.data[0, 0].compute())
+        assert spectrum.shape == cube.axes_manager.signal_shape[::-1]
 
     def test_every_listed_extension_is_covered_here_or_was_before(self):
         """A new extension must come with a laziness test. The original seven

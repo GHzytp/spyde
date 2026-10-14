@@ -40,6 +40,9 @@ dependencies = [
     # via the stock memmap path instead of the fork's chunked-run reader. The
     # [hdf5,image] extras cover .hspy / .tif reading (hyperspy pins the same).
     "rosettasciio[hdf5,image]>=0.14.0",
+    # Velox EMD stores an EDS spectrum image as an event stream; RosettaSciIO
+    # builds it lazily as a sparse array and refuses to load one without this.
+    "sparse",
     "pyxem",
     # The Examples menu's datasets. One curated, checksummed, cited collection
     # (grouped by technique, with real acquisition metadata) instead of each
