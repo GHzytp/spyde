@@ -12,6 +12,74 @@ Earlier releases are described by their GitHub release notes and tags.
 
 .. towncrier release notes start
 
+0.6.0-rc.2 (2026-10-14)
+=======================
+
+API and Behaviour Changes
+-------------------------
+
+- Find Vectors' controls were rearranged: the heatmap became a switch beside Method, "Mask beam stop" moved under a collapsed "Extra", "Check for new models" moved into the Model menu, and a taught model is named from a Save button beside Adapt and Revert. (`#229 <https://github.com/directelectron/spyde/pull/229>`_)
+- Strain Mapping changed its fit, so existing strain maps change when re-run: each vector was weighted by its confidence and positional uncertainty, only one vector per reflection was kept, vectors far from the fitted lattice lost their influence (Tukey biweight), and the reference was centred on its Friedel pairs — halving the in-grain noise on SPED-Ag and making exact spot positions behind a beam stop give exact strain; ``compute_strain_field(robust=None, one_per_reflection=False)`` restores the earlier weighting. (`#229 <https://github.com/directelectron/spyde/pull/229>`_)
+
+
+New Features
+------------
+
+- File → Export to NumPy… wrote what the focused window shows — a committed strain, DPC or orientation map with every component and the fit behind it, a virtual image, a line profile, or the spectrum under the navigator — to a ``.npz`` (or ``.npy`` / ``.csv``) with its calibrated axes and a record of each array's label, units and provenance. (`#193 <https://github.com/directelectron/spyde/pull/193>`_)
+- While Orientation Mapping, EBSD Indexing or Vector Orientation Mapping is still
+  filling its orientation map, that window's toolbar buttons are shown greyed out
+  with a tooltip saying why, and come back when the map is finished, fails or is
+  cancelled, as Find Diffraction Vectors' window already does. (`#217 <https://github.com/directelectron/spyde/pull/217>`_)
+- The **Vector Orientation Mapping** Refine readout now also gives the residual over the matched peaks alone ("matched resid"). The existing "resid" counts every detected peak, so it rises when Find Vectors picks up weak reflections the simulated pattern leaves out, even though the fit itself has not got any worse. (`#218 <https://github.com/directelectron/spyde/pull/218>`_)
+- Find Vectors' neural detector could be taught on your own data — double-click a wrong circle or a missed disk and a copy of the model is refitted on your marks, which you can name and reuse on other datasets — and the Model dropdown showed each model's icon, with the built-in models first and yours after a divider. (`#229 <https://github.com/directelectron/spyde/pull/229>`_)
+- A new detector, "dynamical-mask8", was offered in Find Vectors → Model: it places each disk at the centre of its aperture rather than where the intensity sits inside it, halving the centre error on dynamically filled disks and no longer flooding sparse counted frames with false detections. (`#229 <https://github.com/directelectron/spyde/pull/229>`_)
+- Every diffraction vector found with the neural method gained a confidence (0–1) and a positional uncertainty, and vectors the network was unsure of were drawn faint on the pattern; vectors saved by earlier versions, or found with NXCORR or DoG, open with both empty. (`#229 <https://github.com/directelectron/spyde/pull/229>`_)
+- Find Vectors (neural) started re-placing every disk on the raw frame with a small bundled centre network, and a "Friedel partner" checkbox, on by default, added a second network that also reads each disk's partner across the direct beam — on real GaN this lowered the Friedel error of the centres from 1.13 to 0.64 px. (`#229 <https://github.com/directelectron/spyde/pull/229>`_)
+- In Present mode all four split layouts render as chosen (text above or below the picture as well as beside it), text slides scale their type to fill the stage, and a PNG dropped on a split slide's picture slot fills that slot instead of being added below. Slides now size to the display: moving the presentation to a projector, maximising it or changing the resolution scales text, pictures and split panes together, and live figures redraw sharply at the new size. (`#232 <https://github.com/directelectron/spyde/pull/232>`_)
+- A figure saved in a report reopens as an interactive figure you can pan and zoom, even when the data it came from is not loaded, instead of as a flat picture. (`#233 <https://github.com/directelectron/spyde/pull/233>`_)
+- In a report or presentation, dropping an image or a live figure on an existing picture replaces it in place, and dropping one on a text slide turns it into a split slide. (`#234 <https://github.com/directelectron/spyde/pull/234>`_)
+- SpyDE now opens Gatan DigitalMicrograph (.dm3, .dm4), EMD (.emd, including Velox EDS spectrum images), Quantum Detectors Merlin (.mib), blockfile (.blo) and Ripple (.rpl) files, all loaded lazily so a large scan is read from disk only as you look at it. (`#237 <https://github.com/directelectron/spyde/pull/237>`_)
+- Double-clicking a ``.hspy``, ``.de5`` or ``.csb`` file now opens it in SpyDE, and
+  SpyDE is offered under "Open with" for the other formats it reads (``.mrc``,
+  ``.tif``/``.tiff``, ``.dm3``/``.dm4``, ``.emd``, ``.mib``, ``.blo``, ``.rpl``)
+  without replacing the app those already open in. Opening a file while SpyDE is
+  running adds it to the open window instead of starting a second copy. (`#238 <https://github.com/directelectron/spyde/pull/238>`_)
+
+
+Bug Fixes
+---------
+
+- While Find Diffraction Vectors is still running, dragging the result window's
+  navigator over positions the batch has already computed now shows their
+  diffraction patterns, and once you touch the navigator the window stops
+  replacing your pattern with automatic previews. The window's toolbar buttons,
+  including the vector actions that were previously hidden until the run
+  finished, are shown greyed out with a tooltip until the vectors are ready. (`#132 <https://github.com/directelectron/spyde/pull/132>`_)
+- Side-by-side navigators now keep every panel's crosshair on the navigator's one position: dragging a crosshair in one panel moves the others to it without them snapping back, the panels start where the navigator already was, and a selector added while the navigators are tiled shows its crosshair on every panel. (`#171 <https://github.com/directelectron/spyde/pull/171>`_)
+- Choosing a signal type while the navigator window had focus re-typed the navigator image instead of the dataset. (`#194 <https://github.com/directelectron/spyde/pull/194>`_)
+- Sizes were given one format across the app, with the unit on every value (download progress, and the compute monitor's memory and GPU columns), and a phase's atomic percentage was made to save as it is typed and to stay between 0 and 100. (`#197 <https://github.com/directelectron/spyde/pull/197>`_)
+- A CSB movie opened or re-cut (**To Frames**) at an exposure that is not a whole number of camera frames now has a correct time axis. Planes then alternate in width, and the axis was spaced by the first gap alone, so it drifted with every plane — at 3.5 frames per plane the last plane of a 100 ms movie was labelled 112 ms. Every plane now sits within one camera frame of when it actually started. (`#199 <https://github.com/directelectron/spyde/pull/199>`_)
+- Emptying a figure cell back to a placeholder no longer leaves it holding its
+  baked image, which a later save could write out as an asset the cell no longer
+  owns. (`#215 <https://github.com/directelectron/spyde/pull/215>`_)
+- A window dropped on the report body between two cells now becomes a figure cell
+  even when the drag arrives with an unreadable payload, which is how a real drag
+  out of the operating system can look. (`#215 <https://github.com/directelectron/spyde/pull/215>`_)
+- A split block's text side is now the same markdown editor a text cell has, with
+  the formatting toolbar and the Ctrl-B / Ctrl-I shortcuts it was missing. (`#215 <https://github.com/directelectron/spyde/pull/215>`_)
+- An exported interactive figure is now sized from its own shape the way the
+  sidebar cell is, rather than dropped into one fixed box that letterboxed a wide
+  row of panels and stretched a single square pattern, and a figure with no pixels
+  keeps its caption instead of disappearing. (`#215 <https://github.com/directelectron/spyde/pull/215>`_)
+- DPC: a beam-shift pass could be handed the dataset's live signal, instead of a copy of its own, when a new pass started just as the previous one was checking its beam region. The two copies of that signal could then fail, or show other readers an empty placeholder in place of the data. Each pass now reads its own copy, and taking that copy no longer touches the original. (`#216 <https://github.com/directelectron/spyde/pull/216>`_)
+- Stopping **Find Vectors** while its live preview was drawing no longer leaves the preview's circles on the diffraction pattern. A removal that landed mid-draw used to be undone by that draw. (`#216 <https://github.com/directelectron/spyde/pull/216>`_)
+- **Find Vectors** used to start with whichever automatic settings had arrived when you clicked Compute. The spot size estimated from the pattern and the neural calibration land a moment after the caret opens, so an early click could run the whole batch with the defaults instead. Compute is now greyed out and reads "Calibrating…" until both have arrived. A spot size or threshold you set by hand in the meantime is no longer replaced when they do. (`#218 <https://github.com/directelectron/spyde/pull/218>`_)
+- Find Vectors (NXCORR) now places each spot at its subpixel centre. Positions used to snap to whole pixels (up to ~1 px off on flat-topped disks), and a small minimum distance reported the same disk several times; strain maps built from NXCORR vectors are no longer quantised. (`#219 <https://github.com/directelectron/spyde/pull/219>`_)
+- Find Vectors' neural detector placed spots up to 0.6 % too close to the pattern's top-left corner (up to 0.7 px at the far edge), which biased absolute, CIF-referenced strain by the same amount. (`#229 <https://github.com/directelectron/spyde/pull/229>`_)
+- The "Open full Dask dashboard" menu item and the dashboard button no longer disappear when the analysis backend finishes starting after its cluster. (`#231 <https://github.com/directelectron/spyde/pull/231>`_)
+- Updating on Windows no longer dead-ends in "SpyDE cannot be closed. Please close it manually and click Retry" when an analysis backend from an earlier session is still running: the installer now finds and stops one wherever it is running from, not only inside the installation directory.
+
+
 0.6.0-rc.1 (2026-09-22)
 =======================
 
