@@ -56,14 +56,17 @@ function _seenSettingsDir() {
 
 /**
  * Launch the app. Returns { app, page, backend, jsErrors, assertNoJsErrors }.
- * @param {{dask?: boolean, env?: Record<string,string>}} opts
+ * @param {{dask?: boolean, env?: Record<string,string>, args?: string[], userDataDir?: string}} opts
  *   dask=false (default) → SPYDE_NO_DASK=1 (renderer-only / eager, fast).
  *   dask=true            → real LocalCluster + client.
+ *   args        → extra command-line arguments, e.g. a file to open at launch.
+ *   userDataDir → a profile of the spec's choosing, for a spec that launches a
+ *     second process against the same app (open_with.spec.ts).
  *   env.SPYDE_SETTINGS_DIR → pass your own to opt OUT of the tour suppression
  *     above (first_run.spec.ts does exactly this to get a genuine first launch).
  */
 async function launchApp(opts = {}) {
-  const { dask = false, env = {} } = opts
+  const { dask = false, env = {}, args = [], userDataDir } = opts
   const app = await electron.launch({
     // Resolve Electron from THIS app's tree, not Playwright's. Without an
     // explicit path, playwright-core does a bare require('electron/index.js')
@@ -90,7 +93,8 @@ async function launchApp(opts = {}) {
       // SPYDE_SETTINGS_DIR below only redirects settings.json; this is the
       // Chromium profile, which is a separate thing and has to be a real
       // directory (Chromium refuses to launch without one).
-      `--user-data-dir=${mkdtempSync(join(tmpdir(), 'spyde-e2e-profile-'))}`,
+      `--user-data-dir=${userDataDir ?? mkdtempSync(join(tmpdir(), 'spyde-e2e-profile-'))}`,
+      ...args,
     ],
     env: {
       ...process.env,

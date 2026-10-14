@@ -21,6 +21,7 @@ import {
   initErrorReporting, reportingConfigured, recordProblem, submitReport,
   collectDiagnostics,
 } from '@de/shell-main'
+import { LaunchFileQueue, filePathsFromArgv } from './launchFiles'
 
 // Tell the shell who we are. MUST run before any other @de/shell-main call:
 // the IPC channel prefix, settings paths, the `python -m <module>` spawn and the
@@ -69,6 +70,59 @@ function surfaceMainProcessCrash(kind: string, err: unknown): void {
 
 process.on('uncaughtException', (err) => surfaceMainProcessCrash('uncaughtException', err))
 process.on('unhandledRejection', (reason) => surfaceMainProcessCrash('unhandledRejection', reason))
+
+// ── Files the OS asks us to open ──────────────────────────────────────────────
+//
+// Double-click / "Open with" / `SpyDE <file>`. Every path waits in this queue
+// until the backend is ready, then goes through openDatasets — the File → Open
+// route — so an unsupported or missing file gets the backend's usual error.
+const launchFiles = new LaunchFileQueue()
+
+function openDatasets(paths: readonly string[]): void {
+  for (const path of paths) sendAction('open_file', { path })
+}
+
+function launchArgvFiles(argv: readonly string[], cwd: string): string[] {
+  return filePathsFromArgv(argv, { defaultApp: !!process.defaultApp, cwd })
+}
+
+// One SpyDE per user: a second launch (double-clicking another file while SpyDE
+// is open) hands its files to the running app and exits. Only an installed app
+// takes the lock. Chromium keys it on the profile directory, and every dev
+// checkout shares one (`npm run dev` in two clones would quietly merge into the
+// first), so dev and the e2e suite run without it unless SPYDE_SINGLE_INSTANCE=1
+// asks for it — which is how the second-instance spec tests it, on a profile of
+// its own.
+const takesSingleInstanceLock =
+  app.isPackaged || process.env.SPYDE_SINGLE_INSTANCE === '1'
+const isPrimaryInstance = !takesSingleInstanceLock || app.requestSingleInstanceLock(
+  // The second process resolves its own relative paths against its own working
+  // directory; the running app only ever sees absolute ones.
+  { paths: launchArgvFiles(process.argv, process.cwd()) },
+)
+if (!isPrimaryInstance) {
+  app.quit()
+} else {
+  launchFiles.add(launchArgvFiles(process.argv, process.cwd()))
+
+  app.on('second-instance', (_event, argv, workingDirectory, additionalData) => {
+    const forwarded = (additionalData as { paths?: unknown } | null)?.paths
+    launchFiles.add(Array.isArray(forwarded)
+      ? forwarded.filter((p): p is string => typeof p === 'string')
+      : launchArgvFiles(argv, workingDirectory))
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+
+  // macOS delivers files as events, the first of them before 'ready' when the
+  // file is what launched the app — hence registering at module load.
+  app.on('open-file', (event, path) => {
+    event.preventDefault()
+    launchFiles.add([path])
+  })
+}
 
 // Concurrency guards for anything that writes into the managed Python env:
 // the first-run `uv sync` (envSetupInProgress, set around resolvePythonEnv in
@@ -420,6 +474,9 @@ function attachLifecycleDiagnostics(w: BrowserWindow): void {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // A second launch only forwards its files (see the single-instance lock).
+  if (!isPrimaryInstance) return
+
   // The whole app chrome is dark; force prefers-color-scheme: dark so the
   // anyplotlib figures (which auto-theme off it) render in dark mode to match.
   nativeTheme.themeSource = 'dark'
@@ -577,6 +634,7 @@ app.whenReady().then(async () => {
       if (msg.type === 'ready' || msg.type === 'dask_ready' || msg.type === 'error') {
         console.log(`[spyde backend] ${msg.type}: ${msg.text ?? msg.dashboard ?? ''}`)
       }
+      if (msg.type === 'ready') launchFiles.release((path) => openDatasets([path]))
       // The two things worth having in a problem report written after the fact:
       // the backend dying, and whatever it said before it did.
       if (msg.type === 'backend_exited') {
@@ -681,9 +739,7 @@ function buildMenu(): void {
               ],
             })
             if (!result.canceled) {
-              for (const p of result.filePaths) {
-                sendAction('open_file', { path: p })
-              }
+              openDatasets(result.filePaths)
             }
           },
         },
@@ -698,9 +754,7 @@ function buildMenu(): void {
               properties: ['openDirectory', 'multiSelections'],
             })
             if (!result.canceled) {
-              for (const p of result.filePaths) {
-                sendAction('open_file', { path: p })
-              }
+              openDatasets(result.filePaths)
             }
           },
         },
@@ -825,9 +879,7 @@ ipcMain.handle('spyde:open-file', async () => {
     ],
   })
   if (!result.canceled) {
-    for (const p of result.filePaths) {
-      sendAction('open_file', { path: p })
-    }
+    openDatasets(result.filePaths)
   }
 })
 
@@ -838,7 +890,7 @@ ipcMain.handle('spyde:open-zarr-folder', async () => {
     properties: ['openDirectory', 'multiSelections'],
   })
   if (!result.canceled) {
-    for (const p of result.filePaths) sendAction('open_file', { path: p })
+    openDatasets(result.filePaths)
   }
 })
 
