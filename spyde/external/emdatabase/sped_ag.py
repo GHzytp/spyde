@@ -71,6 +71,23 @@ DATASET = {
 }
 
 
+def fetch() -> str:
+    """Download the calibrated scan once (checksum-verified, then cached) and
+    return its local path.
+
+    THE one fetch: the test harness, the orientation benchmark and CI's
+    prefetch step all call this, so they share one file in one cache. CI caches
+    that directory and prefetches before any spec starts, because the 214 MB
+    download from Zenodo can outlast a spec's whole setup budget.
+    """
+    import pooch
+
+    return pooch.retrieve(
+        url=f"{DATASET['source']}/{DATASET['file']}",
+        known_hash=DATASET["checksum"],
+        fname="SPED-Ag-calibrated.zspy", path=pooch.os_cache("spyde"))
+
+
 def apply() -> bool:
     """Add the dataset to ``em_database.data``. Idempotent and defensive."""
     global _applied

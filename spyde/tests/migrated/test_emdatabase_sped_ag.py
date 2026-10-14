@@ -32,18 +32,36 @@ class TestTheRecordItPointsAt:
 
     def test_the_harness_loader_uses_this_record(self):
         """One declaration, not two: a second copy of a URL and a hash is
-        exactly the pair that drifts. Read off the loader itself, not the
-        module — the module mentions plenty of things the loader does not.
+        exactly the pair that drifts. The harness fetches through this
+        module's ``fetch``, which is also what CI prefetches and caches; a
+        loader with its own download call would miss that cache. Read off the
+        loader itself, not the module.
         """
         import inspect
 
         from spyde.backend._session_testharness import TestHarnessMixin
+        from spyde.external.emdatabase import sped_ag
 
         source = inspect.getsource(TestHarnessMixin._load_test_data_sped_ag)
-        assert "DATASET[" in source, \
-            "the harness should read the record from the external module"
-        assert "zenodo.org" not in source, \
-            "the harness should not carry its own copy of the URL"
+        assert "fetch()" in source, \
+            "the harness should fetch through spyde.external.emdatabase.sped_ag"
+        assert "zenodo.org" not in source and "retrieve(" not in source, \
+            "the harness should not carry its own download"
+        fetch = inspect.getsource(sped_ag.fetch)
+        assert "DATASET[" in fetch and "zenodo.org" not in fetch
+
+    def test_ci_prefetches_and_caches_what_the_harness_loads(self):
+        """The specs that load SPED-Ag have a fixed setup budget, and the
+        214 MB download from Zenodo can use all of it. CI pays it in a prefetch
+        step instead, into a cached directory; both must point at what
+        ``fetch`` writes."""
+        from pathlib import Path
+
+        workflow = (Path(__file__).resolve().parents[3]
+                    / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+        assert "from spyde.external.emdatabase.sped_ag import fetch" in workflow
+        assert "~/.cache/spyde" in workflow, \
+            "pooch.os_cache('spyde') on the Linux runners is not cached"
 
 
 class TestRegistration:

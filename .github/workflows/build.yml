@@ -375,15 +375,22 @@ jobs:
       # ~/.cache/pooch is exspy's GOS databases (42 MB each, Zenodo) — building
       # any EELSCLEdge fetches one on first use, which at Zenodo's ~700 kB/s
       # blows straight through a spec's assertion timeout (eels_edge_component
-      # died at 78% of the download). v2 key: the entry now carries both dirs.
+      # died at 78% of the download). ~/.cache/spyde is the CALIBRATED SPED-Ag
+      # scan (spyde/external/emdatabase/sped_ag.py, Zenodo record 21790591) that
+      # the sped_ag specs actually load: 214 MB at Zenodo's ~700 kB/s is ~300 s,
+      # the whole of a spec's setup budget, so uncached it timed out nearly every
+      # run. v3 key: a saved entry is immutable, and v2's has no spyde dir.
       - name: Cache example datasets (pooch)
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pyxem
             ~/.cache/pooch
-          key: pooch2-pyxem-${{ hashFiles('uv.lock') }}
-          restore-keys: pooch2-pyxem-
+            ~/.cache/spyde
+          key: pooch3-pyxem-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            pooch3-pyxem-
+            pooch2-pyxem-
 
       # Pay the heavy Zenodo downloads OUTSIDE any spec's timeout budget
       # (no-ops on a warm cache; pooch just re-verifies hashes). Two reasons
@@ -394,7 +401,7 @@ jobs:
       # saved, so unless every shard prefetches the full set before running,
       # the saved entry is permanently missing the big file. GOS URLs/hashes
       # are read from the installed exspy so a version bump can't go stale.
-      - name: Prefetch exspy GOS databases + sped_ag
+      - name: Prefetch exspy GOS databases + both SPED-Ag copies
         run: |
           uv run python -c "
           from exspy._misc.eels import gosh_gos as g
@@ -403,6 +410,8 @@ jobs:
               print(src, '->', pooch.retrieve(url=spec['URL'], known_hash=spec['KNOWN_HASH'], progressbar=False))
           import pyxem.data as pxd
           print('sped_ag ->', pxd.sped_ag(allow_download=True, lazy=True))
+          from spyde.external.emdatabase.sped_ag import fetch
+          print('sped_ag (calibrated) ->', fetch())
           "
 
       - name: Run Electron e2e

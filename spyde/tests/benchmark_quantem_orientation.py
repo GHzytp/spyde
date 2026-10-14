@@ -57,15 +57,10 @@ def run(ny=64, nx=208, iy0=0, ix0=0, voltage=200.0, zone_step=1.0,
     # The CALIBRATED scan. pyxem and em-database both still pin a record whose
     # copy is at half the true reciprocal scale, which no crystal can be fitted
     # to; the harness loader is the one that fetches the corrected file.
-    import pooch
-
-    from spyde.external.emdatabase.sped_ag import DATASET
+    from spyde.external.emdatabase.sped_ag import fetch
     import hyperspy.api as hs
 
-    path = pooch.retrieve(url=f"{DATASET['source']}/{DATASET['file']}",
-                          known_hash=DATASET["checksum"],
-                          fname="SPED-Ag-calibrated.zspy",
-                          path=pooch.os_cache("spyde"))
+    path = fetch()
     signal = _t("Load SPED-Ag (calibrated)", lambda: hs.load(path, lazy=True))
     scale = float(signal.axes_manager.signal_axes[0].scale)
     assert abs(scale - TestHarnessMixin._SPED_AG_SCALE) < 1e-9, \
