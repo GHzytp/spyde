@@ -33,10 +33,6 @@ export const REPORTS: Report[] = [
       label: 'em-database — PdCuSiCrystallization (Carter Francis, UW–Madison)',
       url: 'https://pypi.org/project/em-database/',
     },
-    build: [
-      'python -m scripts.compute_pdcusi_vectors',
-      'python -m scripts.gen_report_pdcusi',
-    ],
   },
 ]
 

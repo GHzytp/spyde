@@ -297,8 +297,8 @@ test('in-situ movie: Play/FF gate, real-time playback, fast-forward badge, ' +
     // above (step 2), so the backend-side wiring is already demonstrated.
     // This section additionally checks the CANVAS — which hits the identical
     // PLAYBACK RENDERING GAP (see the note above): confirmed independently
-    // via `movie_nav_scrub.spec.ts` (real file) and repeated `test_nav_drag`
-    // probes outside this spec. Recorded, not failed on.
+    // by repeated `test_nav_drag` probes outside this spec. Recorded, not
+    // failed on.
     const hashesBefore2 = backend.logBuffer.filter((l: string) =>
       l.includes('[plot-paint] SIG')).length
     // Resting centroid of the orange cursor BEFORE play (frame 0).

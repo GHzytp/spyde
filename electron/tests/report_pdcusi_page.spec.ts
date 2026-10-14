@@ -2,8 +2,8 @@
  * report_pdcusi_page.spec.ts — the generated PdCuSi report page, in a real
  * browser over file://.
  *
- * The page is built by `python -m scripts.gen_report_pdcusi` from a 5.7 GB
- * dataset, so it is checked in rather than generated here. When it is absent the
+ * The page was generated once from a 5.7 GB dataset, so it is checked in
+ * rather than generated here. When it is absent the
  * spec SKIPS — a docs artifact that has not been built is not a test failure —
  * but when it is present every claim it makes has to hold up: the static figures
  * must have pixels, and the embedded explorer must actually run (its three
@@ -21,7 +21,7 @@ let browser: Browser
 let page: Page
 
 test.beforeAll(async () => {
-  test.skip(!existsSync(PAGE), 'report page not built (scripts/gen_report_pdcusi.py)')
+  test.skip(!existsSync(PAGE), 'report page not in this checkout')
   const { mkdirSync } = require('fs')
   mkdirSync(SHOTS, { recursive: true })
   browser = await chromium.launch()

@@ -3,11 +3,9 @@
 `csb_format.py` already claims "test_csb_reader.py asserts the two agree" about
 its `_SPEC` and `specifications.yaml`; this is that file.
 
-Scope is deliberate. The event decoder needs a real multi-gigabyte stream to
-exercise (`electron/tests/csb_movie.spec.ts` drives it, and skips itself when
-that file is absent — so it never runs in CI), but everything ABOVE the events
-can be covered from a synthesised file: a valid CSB with an empty payload is
-just a 108-byte header plus a zero-filled block table.
+Scope is deliberate. The event decoder is covered by `test_csb_events.py`;
+everything ABOVE the events can be covered from a synthesised file: a valid CSB
+with an empty payload is just a 108-byte header plus a zero-filled block table.
 
 That covers the parts most likely to break silently rather than loudly:
   * the plugin not registering, so `.csb` quietly will not open at all

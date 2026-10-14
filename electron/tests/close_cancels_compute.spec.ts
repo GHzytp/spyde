@@ -3,12 +3,8 @@
  * CLEANLY (no renderer crash) while the cancellation registry stops the
  * in-flight Dask work.
  *
- * The mechanism-level assertion (a registered future actually transitions to
- * "cancelled" on a real scheduler) is covered by the plain-Python real-cluster
- * repro (spyde/tests/repro_close_cancels.py — a LocalCluster(processes=True)
- * can't run under the Playwright/agent sandbox). THIS spec covers the app
- * integration: driving Find Vectors to compute and then closing the whole tree
- * (navigator X) mid-flight must not throw in the renderer and must remove every
+ * THIS spec covers the app integration: driving Find Vectors to compute and
+ * then closing the whole tree (navigator X) mid-flight must not throw in the renderer and must remove every
  * window — the racy teardown path SignalTree.close -> _cancel_all_compute +
  * per-plot close all runs here.
  */

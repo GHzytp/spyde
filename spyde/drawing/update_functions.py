@@ -1867,7 +1867,7 @@ def _dispatched_progressive(result_array, nav_shape, client, on_chunk_done,
       * **Batched submit.** One ``client.compute(list)`` per top-up instead of a
         blocking scheduler round trip per chunk with the GIL held in the client
         process.  Measured end to end on a 977-frame / 15.3 GB in-situ movie
-        (977 nav chunks, 4 workers — ``benchmark_nav_fill_dispatch.py``):
+        (977 nav chunks, 4 workers):
         **9.86 s** of submission during which NOTHING else in the backend could
         run (blank navigator, silent paint threads) and a first painted chunk at
         16.4 s, versus 0.00 s / **0.08 s** here.

@@ -7,8 +7,8 @@
  * always point at the release being cut. Idempotent: rewrites only the content
  * BETWEEN the marker comments, so re-running with the same version is a no-op.
  *
- *   node scripts/update-download-links.mjs <version> [repo]
- *   e.g. node scripts/update-download-links.mjs 0.2.0-rc.8 CSSFrancis/spyde
+ *   node .github/scripts/update-download-links.mjs <version> [repo]
+ *   e.g. node .github/scripts/update-download-links.mjs 0.2.0-rc.8 CSSFrancis/spyde
  *
  * Markers (must already exist in each file):
  *   README.md (HTML comments):
@@ -26,12 +26,12 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 const version = (process.argv[2] || '').replace(/^v/, '').trim()
 const repo = (process.argv[3] || 'CSSFrancis/spyde').trim()
 if (!version) {
-  console.error('usage: node scripts/update-download-links.mjs <version> [owner/repo]')
+  console.error('usage: node .github/scripts/update-download-links.mjs <version> [owner/repo]')
   process.exit(1)
 }
 

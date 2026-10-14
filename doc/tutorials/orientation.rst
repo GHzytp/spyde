@@ -2,7 +2,7 @@
    GENERATED FILE — do not edit by hand.
    Source: guides/orientation.ts (the same walkthrough the in-app
    guided tour renders). Regenerate with:
-       node scripts/gen_guide_docs.mjs
+       node doc/gen_guide_docs.mjs
 
 .. _tutorial-orientation:
 

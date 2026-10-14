@@ -2,8 +2,7 @@
 
 `test_csb_reader.py` covers everything reachable WITHOUT event payload —
 registration, the header, block geometry, rejection. This covers the rest,
-which until now ran only in `csb_movie.spec.ts` against a multi-gigabyte
-stream that no runner has, so it skipped itself on every CI run.
+from synthesised streams small enough for CI.
 
 The fixtures come from `_csb_synthetic.py`, whose `expected_image` computes
 what a range of frames must integrate to from the format's documented event

@@ -181,7 +181,7 @@ jobs:
       # release being cut — so the GitHub front page + docs point at it the moment
       # the release publishes. Idempotent (rewrites only between the markers).
       - name: Update download links (README + docs)
-        run: node scripts/update-download-links.mjs "${{ steps.version.outputs.new_version }}" "${{ github.repository }}"
+        run: node .github/scripts/update-download-links.mjs "${{ steps.version.outputs.new_version }}" "${{ github.repository }}"
 
       # Assemble CHANGELOG.rst from the per-PR fragments in upcoming_changes/
       # and delete them. --yes skips the interactive confirm; the version is
@@ -260,10 +260,7 @@ jobs:
           Do these on a real machine — CI has no GPU/display and the migrated
           suite forces \`SPYDE_NO_DASK=1\`:
           - [ ] **Distributed navigator path** — open a multi-GB 4D-STEM scan, drag the
-            navigator; the diffraction pattern must track without freezing. If the
-            \`repro_*.py\` distributed scripts are present, run them directly
-            (\`uv run python -m spyde.tests.repro_<name>\`); they spin a real
-            \`LocalCluster\` and won't run under pytest.
+            navigator; the diffraction pattern must track without freezing.
           - [ ] **GPU find-vectors / orientation** — on a CUDA box, run Find Vectors and
             Orientation Mapping on a real dataset (e.g. \`pyxem.data.sped_ag()\`); confirm
             results look right and nothing segfaults. (The numba subpixel kernel is unit-

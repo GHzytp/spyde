@@ -15,7 +15,7 @@ app, the website and the docs can never drift apart:
    * - **Help → <technique> → Info…** (background + further reading)
      - ``electron/src/renderer/src/components/GuideInfoDialog.tsx``
    * - The docs pages under :ref:`tutorials-index`
-     - ``scripts/gen_guide_docs.mjs`` → ``doc/tutorials/*.rst``
+     - ``doc/gen_guide_docs.mjs`` → ``doc/tutorials/*.rst``
    * - The standalone docs website (with interactive embeds)
      - ``docs-site/src/DocsApp.tsx``
 
@@ -68,8 +68,8 @@ Regenerating the docs pages
 ``doc/tutorials/*.rst`` is generated and **committed**, so a docs build needs
 only Python. After editing any guide, regenerate and commit the result::
 
-    node scripts/gen_guide_docs.mjs            # write doc/tutorials/
-    node scripts/gen_guide_docs.mjs --check    # fail if it would change
+    node doc/gen_guide_docs.mjs            # write doc/tutorials/
+    node doc/gen_guide_docs.mjs --check    # fail if it would change
 
 (The script bundles the TypeScript guides with the ``esbuild`` already installed
 under ``electron/node_modules``, so run ``npm install`` in ``electron/`` first.)

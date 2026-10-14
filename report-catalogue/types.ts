@@ -21,15 +21,13 @@ export interface Report {
   /** One or two sentences: what the reader gets out of opening it. */
   summary: string
   /**
-   * File name under `docs-site/public/media/reports/`. Built by a generator in
-   * `scripts/` and NOT committed when it is large — the site degrades to a
-   * "not built" note rather than a broken frame (see ReportView).
+   * File name under `docs-site/public/media/reports/`. When the file is missing
+   * the site degrades to a "not in this checkout" note rather than a broken
+   * frame (see ReportView).
    */
   file: string
   /** Header strip: dataset size, technique, instrument — whatever orients. */
   facts: ReportFact[]
   /** Where the data came from, rendered under the facts. */
   source?: { label: string; url?: string }
-  /** The commands that rebuild the report file, shown so it is reproducible. */
-  build?: string[]
 }
