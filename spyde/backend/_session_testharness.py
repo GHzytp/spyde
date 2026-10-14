@@ -958,7 +958,13 @@ class TestHarnessMixin:
             # Where the crosshair is NOW, in the same (iy, ix) frame as the
             # ready mask. `current_indices` is the selector's own committed
             # position ([[ix, iy]] for a 2-D crosshair) and therefore agrees
-            # with the widget the renderer is drawing.
+            # with the widget the renderer is drawing. It is None until the
+            # window's first navigator read has run, and with no position
+            # there is no delta to report.
+            if sel.current_indices is None:
+                log.warning("[test-aim] navigator has no committed position "
+                            "yet (its first read has not run)")
+                return
             cur = np.asarray(sel.current_indices)
             if cur.ndim >= 2:
                 cur = cur[0]

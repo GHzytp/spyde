@@ -741,6 +741,10 @@ class TestAimReadyPositionAction:
         peaks = {(iy, ix): [(4.0, 4.0, 9.0)] for iy in range(2) for ix in range(2)}
         store.add(sl, _block(2, 2, 4, peaks))
         preview.note_block(sl)
+        # Opening the window queues the navigator's first read (and arms its
+        # settle re-fire). Until both have run through the preview, a test that
+        # sets the crosshair or snapshots the read counters races them.
+        assert quiesce(session), why_busy(session)
         return tree, preview
 
     def test_reports_a_ready_target_as_a_delta(self, window, caplog):
@@ -785,6 +789,23 @@ class TestAimReadyPositionAction:
             assert (float(w.cx), float(w.cy)) == before
         assert (preview.frames_served, preview.reads_declined) == (served0,
                                                                    declined0)
+        preview.close()
+
+    def test_before_the_first_read_it_narrates_and_does_not_raise(
+            self, window, caplog):
+        """A crosshair with no committed position yet has no delta to report.
+        This used to index a 0-d array and log an IndexError."""
+        import logging
+        caplog.set_level(logging.INFO)
+        session = window["window"]
+        tree, preview = self._prepared(session, caplog)
+        _nav_selector(tree).current_indices = None
+
+        session.dispatch_action({"action": "test_aim_ready_position"})
+
+        messages = [r.getMessage() for r in self._aim_records(caplog)]
+        assert any("no committed position" in m for m in messages), messages
+        assert not any("failed" in m or "walk target" in m for m in messages)
         preview.close()
 
     def test_without_a_preview_it_narrates_and_does_not_raise(self, window,
