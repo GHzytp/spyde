@@ -191,14 +191,16 @@ test('5) Present mode + presenter view reflect the slide-native header', async (
   await expect(active).toHaveAttribute('data-kind', 'title')
   await expect(active).toHaveAttribute('data-style', 'accent')
   expect(await counterText(page)).toBe('1 / 2')
-  // The title heading is markedly larger + centered (present-title-md).
+  // The title heading is markedly larger + centered (present-title-md is 4.2
+  // stage rem). In stage rem, not pixels: the slide scales with the window.
   const h1 = active.locator('h1')
   await expect(h1).toHaveText(/Orientation Mapping/)
   const info = await h1.evaluate((el: HTMLElement) => {
     const cs = getComputedStyle(el)
-    return { fontPx: parseFloat(cs.fontSize), textAlign: cs.textAlign }
+    return { fontPx: parseFloat(cs.fontSize), textAlign: cs.textAlign,
+             stageRemPx: parseFloat(cs.getPropertyValue('--slide-rem')) }
   })
-  expect(info.fontPx).toBeGreaterThan(64)
+  expect(info.fontPx / info.stageRemPx).toBeGreaterThan(4)
   expect(info.textAlign).toBe('center')
   await page.screenshot({ path: join(SHOTS, '05-present-title-accent.png') })
 
