@@ -72,18 +72,26 @@ test('a second launch opens its file in the running app and exits', async () => 
     expect(await page.locator('[data-testid="subwindow"]').count()).toBe(0)
 
     const electronBinary = require(require.resolve('electron/index.js', { paths: [__dirname] }))
-    const second = spawn(electronBinary, [MAIN, `--user-data-dir=${profile}`, DM4], {
+    // Playwright launches the first app with --no-sandbox on Linux, so this one
+    // needs it too: a CI runner's npm-installed Electron has no setuid
+    // chrome-sandbox helper and no unprivileged user namespaces to fall back
+    // on, so Chromium aborts on a signal before any of the app's code runs.
+    const sandboxArgs = process.platform === 'linux' ? ['--no-sandbox'] : []
+    const second = spawn(electronBinary, [...sandboxArgs, MAIN, `--user-data-dir=${profile}`, DM4], {
       env: { ...process.env, ...env, SPYDE_NO_DASK: '1' },
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
     })
-    const exitCode = await new Promise<number | null>((resolve, reject) => {
+    let output = ''
+    second.stdout.on('data', (chunk) => { output += chunk })
+    second.stderr.on('data', (chunk) => { output += chunk })
+    const exit = await new Promise<{ code: number | null; signal: string | null }>((resolve, reject) => {
       const timer = setTimeout(() => {
         second.kill()
-        reject(new Error('the second launch kept running instead of handing over'))
+        reject(new Error(`the second launch kept running instead of handing over:\n${output}`))
       }, 30_000)
-      second.on('exit', (code) => { clearTimeout(timer); resolve(code) })
+      second.on('exit', (code, signal) => { clearTimeout(timer); resolve({ code, signal }) })
     })
-    expect(exitCode).toBe(0)
+    expect(exit, `the second launch did not exit cleanly:\n${output}`).toEqual({ code: 0, signal: null })
 
     // The 2 x 2 scan opens as navigator + signal, in the FIRST app.
     await waitForSubwindowCount(page, 2, 90_000)

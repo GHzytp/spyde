@@ -101,7 +101,9 @@ const isPrimaryInstance = !takesSingleInstanceLock || app.requestSingleInstanceL
   { paths: launchArgvFiles(process.argv, process.cwd()) },
 )
 if (!isPrimaryInstance) {
-  app.quit()
+  // The files went over with the lock request and nothing has been created
+  // yet, so exit outright rather than through a quit that waits on startup.
+  app.exit(0)
 } else {
   launchFiles.add(launchArgvFiles(process.argv, process.cwd()))
 
