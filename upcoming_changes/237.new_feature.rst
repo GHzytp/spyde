@@ -1,0 +1,1 @@
+SpyDE now opens Gatan DigitalMicrograph (.dm3, .dm4), EMD (.emd), Quantum Detectors Merlin (.mib), blockfile (.blo) and Ripple (.rpl) files, all loaded lazily so a large scan is read from disk only as you look at it.
