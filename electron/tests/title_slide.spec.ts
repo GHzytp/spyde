@@ -147,20 +147,22 @@ test('2) enter Present mode → slide 1 is a BIG CENTERED title', async () => {
   await expect(h1).toHaveText(/Orientation Mapping/)
   expect(await counterText(page)).toBe('1 / 2')
 
-  // The title font is markedly LARGE (present-title-md h1 = 4.2rem ≈ 88px at the
-  // 21px stage base) and the text is CENTERED. Assert both from computed style.
+  // The title font is markedly LARGE (present-title-md h1 = 4.2 stage rem) and
+  // the text is CENTERED. Measured in STAGE rem — the slide scales with the
+  // window, so a pixel threshold would only hold at one window size.
   const info = await h1.evaluate((el: HTMLElement) => {
     const cs = getComputedStyle(el)
     const md = el.closest('[data-testid^="present-md-"]') as HTMLElement | null
     return {
       fontPx: parseFloat(cs.fontSize),
+      stageRemPx: parseFloat(cs.getPropertyValue('--slide-rem')),
       textAlign: cs.textAlign,
       mdTitle: md?.getAttribute('data-title-slide') || '0',
     }
   })
   expect(info.mdTitle).toBe('1')
-  // A title heading is much bigger than a normal slide h1 (~2.4rem ≈ 50px).
-  expect(info.fontPx).toBeGreaterThan(64)
+  // A title heading is much bigger than a normal slide h1 (2.4 stage rem).
+  expect(info.fontPx / info.stageRemPx).toBeGreaterThan(4)
   expect(info.textAlign).toBe('center')
 
   await page.screenshot({ path: join(SHOTS, '02-title-slide.png') })

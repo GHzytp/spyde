@@ -80,6 +80,65 @@ const CloseIcon = () => (
   </svg>
 )
 
+// ── The slide stage ───────────────────────────────────────────────────────────
+// A slide is laid out on a fixed 16:9 LOGICAL stage, and that stage is sized to
+// the Present window — so moving the window to a projector, maximising it, or a
+// change of display resolution scales text, gaps, split proportions and pictures
+// together. 1920×1080 because the sizes below were tuned on a 1080p projector:
+// at that size a slide looks exactly as it did before there was a stage.
+//
+// Scaled by LAYOUT, not by a CSS transform. A transform scales the live
+// figures' canvases as bitmaps — a figure laid out at 960 px and stretched to
+// 1920 is a blurred 960 px figure. Every slide length is instead a multiple of
+// `--slide-rem`, so the figure boxes come out at real pixels and each figure
+// re-renders at the size it is shown.
+const STAGE_WIDTH = 1920
+const STAGE_HEIGHT = 1080
+// Logical pixels in one stage rem — the stage's own `1rem`.
+const STAGE_REM = 16
+
+/** A length on the slide stage, in stage rem. Outside a stage (the presenter
+ *  dashboard's static previews) it falls back to the page's rem, so markdown
+ *  rules shared with those previews keep the size they always had there. */
+function stageRem(rem: number): string {
+  return `calc(${+rem.toFixed(4)} * var(--slide-rem, 1rem))`
+}
+/** A percentage of the stage's height — what `vh` meant before the stage. */
+function stageHeight(percent: number): string {
+  return stageRem(percent * STAGE_HEIGHT / 100 / STAGE_REM)
+}
+/** A percentage of the stage's width — what `vw` meant before the stage. */
+function stageWidth(percent: number): string {
+  return stageRem(percent * STAGE_WIDTH / 100 / STAGE_REM)
+}
+
+/**
+ * How much the logical stage is scaled to fit `host`: the smaller of the two
+ * ratios, so the whole 16:9 slide is always on screen, letterboxed when the
+ * window is another shape.
+ *
+ * A ResizeObserver on the host rather than the window's `resize` event: every
+ * way the display can change under a presentation — maximise, dragging the
+ * window onto a projector, a resolution or scale-factor change — ends as a
+ * resize of this element, and not all of them fire `resize` on the window.
+ */
+function useStageScale(host: HTMLElement | null): number {
+  const [scale, setScale] = React.useState(1)
+  React.useLayoutEffect(() => {
+    if (!host) return
+    const measure = () => {
+      if (!host.clientWidth || !host.clientHeight) return
+      setScale(Math.min(host.clientWidth / STAGE_WIDTH,
+                        host.clientHeight / STAGE_HEIGHT))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [host])
+  return scale
+}
+
 // Present-mode markdown sizing: the `.spyde-md` base stylesheet (injected by
 // ReportCell) is em-relative off `--spyde-md-fs` (13px in the sidebar). On the
 // full-screen stage we want big readable type, so a scoped `present-md` override
@@ -93,7 +152,7 @@ if (typeof document !== 'undefined' && !document.getElementById('spyde-present-m
 /* Colours come from the deck THEME via custom properties set on the present
    overlay (themeVars). The literals are the fallback for anything rendering
    this markdown outside a themed deck. */
-.present-md { font-size: 1.15rem; line-height: 1.6;
+.present-md { font-size: ${stageRem(1.15)}; line-height: 1.6;
   color: var(--spyde-deck-text, #e8e8f0); word-break: break-word; }
 .present-md > *:first-child { margin-top: 0; }
 /* Headings carry an explicit colour: the BASE .spyde-md sheet hard-codes
@@ -103,37 +162,58 @@ if (typeof document !== 'undefined' && !document.getElementById('spyde-present-m
    (No backticks in this block — it lives inside a JS template literal.) */
 .present-md h1, .present-md h2, .present-md h3,
 .present-md h4, .present-md h5, .present-md h6 { color: var(--spyde-deck-text, #cdd6f4); }
-.present-md h1 { font-size: 2.4rem; line-height: 1.15; margin: 0 0 1.2rem; font-weight: 700;
+.present-md h1 { font-size: ${stageRem(2.4)}; line-height: 1.15; margin: 0 0 ${stageRem(1.2)};
+  font-weight: 700; border-bottom: none; padding-bottom: 0; }
+.present-md h2 { font-size: ${stageRem(1.8)}; margin: ${stageRem(1.4)} 0 ${stageRem(0.7)};
   border-bottom: none; padding-bottom: 0; }
-.present-md h2 { font-size: 1.8rem; margin: 1.4rem 0 0.7rem; border-bottom: none; padding-bottom: 0; }
-.present-md h3 { font-size: 1.35rem; margin: 1.1rem 0 0.5rem; }
-.present-md p { margin: 0 0 0.9rem; }
-.present-md ul, .present-md ol { margin: 0.6rem 0; padding-left: 1.6rem; }
-.present-md li { margin: 0.3rem 0; }
+.present-md h3 { font-size: ${stageRem(1.35)}; margin: ${stageRem(1.1)} 0 ${stageRem(0.5)}; }
+.present-md p { margin: 0 0 ${stageRem(0.9)}; }
+.present-md ul, .present-md ol { margin: ${stageRem(0.6)} 0; padding-left: 1.4em; }
+.present-md li { margin: ${stageRem(0.3)} 0; }
 .present-md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em; background: #22222f; padding: 0.1em 0.35em; border-radius: 4px; color: #f5c2e7; }
-.present-md pre { background: #1c1c28; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+.present-md pre { background: #1c1c28; padding: ${stageRem(1)}; border-radius: 8px; overflow-x: auto; }
 .present-md pre code { background: none; padding: 0; color: #cdd6f4; }
 .present-md blockquote { border-left: 4px solid var(--spyde-deck-accent, #45475a);
-  margin: 0.8rem 0; padding: 0.2rem 1rem;
+  margin: ${stageRem(0.8)} 0; padding: ${stageRem(0.2)} ${stageRem(1)};
   color: var(--spyde-deck-muted, #a6adc8); }
 .present-md a { color: var(--spyde-deck-accent, #89b4fa); }
 .present-md strong { color: var(--spyde-deck-text, #ffffff); }
-.present-md .katex-display { display: block; margin: 1rem 0; text-align: center;
+.present-md .katex-display { display: block; margin: ${stageRem(1)} 0; text-align: center;
   overflow-x: auto; overflow-y: hidden; }
+/* ── text-only slides FILL the stage ──────────────────────────────────────────
+   A heading and a few bullets at prose size, centred in a 60rem column, is a
+   small block adrift in a large dark rectangle on a projector. These tiers scale
+   the type up so a sparse slide uses the room it has; a dense slide gets no
+   class at all and keeps prose size, which is what stops it overflowing.
+   Sized off the stage's height, so they scale with the display like the rest. */
+.present-fill .present-md { font-size: ${stageHeight(2.55)}; line-height: 1.55; }
+.present-fill .present-md h1 { font-size: ${stageHeight(5.6)}; margin: 0 0 ${stageRem(1.4)}; }
+.present-fill .present-md h2 { font-size: ${stageHeight(4.3)}; margin: 0 0 ${stageRem(1)}; }
+.present-fill .present-md h3 { font-size: ${stageHeight(3.2)}; }
+.present-fill .present-md li { margin: 0.55em 0; }
+.present-fill .present-md ul, .present-fill .present-md ol { margin: 0.8em 0; }
+.present-fill .present-md p { margin: 0 0 0.9em; }
+/* The sparse tier goes further — this is the "title + four bullets" slide. */
+.present-fill-lg .present-md { font-size: ${stageHeight(3.05)}; }
+.present-fill-lg .present-md h2 { font-size: ${stageHeight(5)}; }
+.present-fill-lg .present-md li { margin: 0.7em 0; }
 /* ── presentation polish: TITLE / SECTION slides ──────────────────────────────
    A title slide centers a large title block — first heading huge, the rest a
    muted subtitle. Scoped to .present-title-md so a content slide is unchanged. */
 .present-title-md { text-align: center; }
 .present-title-md h1 { color: var(--spyde-deck-text, #cdd6f4);
-  font-size: 4.2rem; line-height: 1.08; margin: 0 0 0.6rem;
+  font-size: ${stageRem(4.2)}; line-height: 1.08; margin: 0 0 ${stageRem(0.6)};
   font-weight: 800; letter-spacing: -0.01em; }
-.present-title-md h2 { font-size: 2.2rem; margin: 0.2rem 0; font-weight: 600;
+.present-title-md h2 { font-size: ${stageRem(2.2)}; margin: ${stageRem(0.2)} 0; font-weight: 600;
   color: var(--spyde-deck-text, #cdd6f4); }
-.present-title-md h3 { font-size: 1.6rem; color: var(--spyde-deck-muted, #a6adc8); font-weight: 500; }
-.present-title-md p { font-size: 1.6rem; color: var(--spyde-deck-muted, #a6adc8); margin: 0.3rem 0; }
-.present-title-md h1::after { content: ""; display: block; width: 4rem; height: 3px;
-  margin: 1.2rem auto 0; background: var(--spyde-deck-accent, #89b4fa); border-radius: 2px; }
+.present-title-md h3 { font-size: ${stageRem(1.6)}; color: var(--spyde-deck-muted, #a6adc8);
+  font-weight: 500; }
+.present-title-md p { font-size: ${stageRem(1.6)}; color: var(--spyde-deck-muted, #a6adc8);
+  margin: ${stageRem(0.3)} 0; }
+.present-title-md h1::after { content: ""; display: block; width: ${stageRem(4)};
+  height: ${stageRem(0.1875)}; margin: ${stageRem(1.2)} auto 0;
+  background: var(--spyde-deck-accent, #89b4fa); border-radius: 2px; }
 /* ── presenter-view speaker notes ─────────────────────────────────────────────
    The big readable notes panel in the presenter dashboard — larger, roomy line
    height, scoped so it doesn't affect the audience slide markdown. */
@@ -170,6 +250,29 @@ interface Props {
    *  action, and shows the "Back to presentation" pill. */
   onLaunchLive: (action: LiveAction) => void
 }
+
+/**
+ * Resolve a split cell's layout into the two booleans that actually drive the
+ * grid — the renderer mirror of `model._SPLIT_LAYOUTS` and of the EDITOR's own
+ * resolution in ReportSplitCell.
+ *
+ * All FOUR layouts, not the left/right pair this used to test with a bare
+ * `!== 'text-right'`: that read `text-top` and `text-bottom` as text-left, so a
+ * stacked split round-tripped through the document perfectly and then rendered
+ * side-by-side on the slide. The editor offered a layout the deck could not
+ * show.
+ */
+function splitLayoutOf(raw: string | undefined): {
+  stacked: boolean; textFirst: boolean; layout: string
+} {
+  const layout = SPLIT_LAYOUTS.includes(raw ?? '') ? (raw as string) : 'text-left'
+  return {
+    layout,
+    stacked: layout === 'text-top' || layout === 'text-bottom',
+    textFirst: layout === 'text-left' || layout === 'text-top',
+  }
+}
+const SPLIT_LAYOUTS: string[] = ['text-left', 'text-right', 'text-top', 'text-bottom']
 
 /** Group the mirrored report cells into slides by `slide_break` — the renderer
  *  mirror of `ReportDoc.slides()`. A break STARTS a new slide; the first cell
@@ -265,7 +368,7 @@ function SlideFooter({ theme, slideNumber, slideCount }: {
             src={theme.logo}
             alt=""
             data-testid="present-footer-logo"
-            style={{ ...styles.footerLogo, height: theme.logo_height }}
+            style={{ ...styles.footerLogo, height: stageRem(theme.logo_height / STAGE_REM) }}
           />
         )}
         {bits.length > 0 && (
@@ -377,6 +480,10 @@ export function PresentMode({ initialSlide, onSlideChange, onExit, onLaunchLive 
   const isMac = window.electron?.platform === 'darwin'
   const topBarStyle = isMac ? styles.topBar : { ...styles.topBar, top: 46, right: 12 }
 
+  // The overlay is the whole Present window; the slide stage is fitted into it.
+  const [overlay, setOverlay] = React.useState<HTMLDivElement | null>(null)
+  const scale = useStageScale(overlay)
+
   // Report every change up so App can persist it for re-entry.
   useEffect(() => { onSlideChange(index) }, [index, onSlideChange])
   // Keep the index valid as the deck changes (cells added/removed while open).
@@ -439,6 +546,7 @@ export function PresentMode({ initialSlide, onSlideChange, onExit, onLaunchLive 
 
   return (
     <div
+      ref={setOverlay}
       style={{ ...styles.overlay, ...themeVars(theme) }}
       data-testid="present-mode"
       data-presenter={presenter ? '1' : '0'}
@@ -447,7 +555,18 @@ export function PresentMode({ initialSlide, onSlideChange, onExit, onLaunchLive 
           navigation and never tear down); only the active one is displayed.
           In presenter mode the whole audience stack is hidden (kept MOUNTED so
           the live iframes survive) and the presenter dashboard renders on top. */}
-      <div style={presenter ? styles.audienceHidden : undefined} aria-hidden={presenter}>
+      <div
+        data-testid="present-stage"
+        data-scale={scale.toFixed(4)}
+        style={{ ...styles.stage,
+          // Whole pixels: a fractional stage edge would leave the figures a
+          // half-pixel off the device grid, which is a blur of its own.
+          width: Math.round(STAGE_WIDTH * scale),
+          height: Math.round(STAGE_HEIGHT * scale),
+          ['--slide-rem' as any]: `${STAGE_REM * scale}px`,
+          ...(presenter ? styles.audienceHidden : {}) }}
+        aria-hidden={presenter}
+      >
         {slides.map((group, si) => (
           <Slide
             key={si}
@@ -767,11 +886,13 @@ function PreviewCell({ cell, titleSlide }: { cell: ReportCell; titleSlide: boole
              : <div style={styles.previewFigPending}>figure</div>}
       </div>
     )
-    const textLeft = (cell.split_layout ?? 'text-left') !== 'text-right'
+    const { stacked, textFirst } = splitLayoutOf(cell.split_layout)
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem',
+      <div style={{ display: 'grid',
+                    gridTemplateColumns: stacked ? '1fr' : '1fr 1fr',
+                    gap: '1rem',
                     alignItems: 'center', margin: '0.5rem 0' }}>
-        {textLeft ? [textPane, figPane] : [figPane, textPane]}
+        {textFirst ? [textPane, figPane] : [figPane, textPane]}
       </div>
     )
   }
@@ -830,13 +951,39 @@ function Slide({ cells, active, reportFigures, iframeRefs, replayState, onLaunch
   // Leave room for the markdown around them; never shrink below something
   // readable, and never grow past the single-figure case.
   //
-  // `vh` is only the STARTING point — each figure also carries a caption and
-  // margins (~28px measured), and hand-computing that against the viewport was
-  // wrong twice (24vh and 18vh both still overflowed at five figures). So the
+  // A percentage of the stage's height, and only the STARTING point — each
+  // figure also carries a caption and margins, and hand-computing that was
+  // wrong twice (24% and 18% both still overflowed at five figures). So the
   // boxes also FLEX: `slideInner` is a flex column and each box is
-  // `flex: 1 1 <figVh>`, which lets the browser do the arithmetic against the
+  // `flex: 1 1 <basis>`, which lets the browser do the arithmetic against the
   // real stage height whatever the captions and markdown around them cost.
   const figVh = visualCells <= 1 ? 58 : Math.max(16, Math.round(62 / visualCells))
+
+  // FILL THE STAGE on a text-only slide.
+  //
+  // A heading plus a few bullets used to render at prose size, vertically
+  // centred in a 60rem column, which on a 1900px projector is a small block
+  // floating in a large dark rectangle with dead space above AND below. A slide
+  // is not a paragraph — it should use the room it has.
+  //
+  // Scaled by CONTENT LENGTH rather than by measuring: a sparse slide gets the
+  // big type, a dense one keeps prose size so it can't overflow into the
+  // pager. Deterministic, no layout thrash, no reflow loop — and the tier is
+  // exported as `data-fill` so a spec can assert it without reading font sizes.
+  // SPLIT slides qualify too. Their text side is its own column, so scaling it
+  // cannot crowd the picture — and a split left at prose size was the same
+  // complaint: a heading and four bullets adrift in half a dark rectangle.
+  // A slide with a full-width figure/image/movie does NOT qualify: there the
+  // text shares the vertical budget with the visual and bigger type pushes it
+  // off the stage.
+  const splitCells = cells.filter(c => c.cell_type === 'split').length
+  const splitOnly = splitCells > 0 && visualCells === splitCells
+  const fillable = !isTitle && (visualCells === 0 || splitOnly)
+  const textLen = cells.reduce((n, c) => n + (c.source ?? '').length, 0)
+  // A split's text lives in HALF the width, so the same character count fills
+  // twice the height — the tiers step down accordingly.
+  const [lgMax, mdMax] = splitOnly ? [260, 520] : [400, 850]
+  const fill = !fillable ? '' : textLen < lgMax ? 'lg' : textLen < mdMax ? 'md' : ''
 
   const renderCell = (cell: ReportCell) => (
     <SlideCell
@@ -856,17 +1003,31 @@ function Slide({ cells, active, reportFigures, iframeRefs, replayState, onLaunch
       data-kind={isTitle ? 'title' : 'content'}
       data-style={meta.style || 'default'}
       data-fig-vh={figVh}
+      data-fill={fill || 'base'}
       style={{ ...styles.slide, ...styleBg,
         ...(isTitle ? styles.slideTitle : {}),
         ...(active ? styles.slideActive : {}),
-        ['--spyde-fig-vh' as any]: `${figVh}vh` }}
+        ['--spyde-fig-basis' as any]: stageHeight(figVh) }}
     >
-      <div style={{ ...styles.slideInner,
+      <div
+        className={fill ? `present-fill present-fill-${fill}` : undefined}
+        style={{ ...styles.slideInner,
         // A slide carrying a figure gets the WIDE column: 60rem is a prose
         // measure (right for text, wrong for data), and capping a figure slide
         // at it left most of a wide screen empty while the plot rendered small.
-        // Text-only slides keep the readable measure.
         ...(visualCells > 0 ? styles.slideInnerWide : {}),
+        // A scaled-up text slide needs a wider column for its bigger type:
+        // leaving it at 60 stage rem while the body goes from prose size to
+        // the fill tier would SHORTEN the measure to ~45 characters and undo
+        // the point.
+        ...(fill ? styles.slideInnerFill : {}),
+        // TOP-align content slides. Centring is right for a title card, but on a
+        // content slide it floats the heading at a height that depends on how
+        // much text follows it — so consecutive slides visibly jump. Anchoring
+        // the heading is what makes a deck read as one deck. A slide whose
+        // figures grow to fill has no free space to distribute, so this is a
+        // no-op there.
+        ...(isTitle ? {} : styles.slideInnerTop),
         ...(isTitle ? styles.slideInnerTitle : {}) }}>
         {cells.map(cell => (
           <React.Fragment key={cell.id}>{renderCell(cell)}</React.Fragment>
@@ -1019,12 +1180,19 @@ function SlideSplit({ cell, reportFigures, iframeRefs, replayState }: {
       )}
     </div>
   )
-  const textLeft = (cell.split_layout ?? 'text-left') !== 'text-right'
+  const { stacked, textFirst, layout } = splitLayoutOf(cell.split_layout)
   return (
     <div data-testid={`present-split-${cell.id}`}
-         data-layout={textLeft ? 'text-left' : 'text-right'}
-         style={styles.splitRow}>
-      {textLeft ? [textPane, figPane] : [figPane, textPane]}
+         data-layout={layout}
+         style={{ ...styles.splitRow,
+                  // Stacked: ONE column, and the text row sizes to its content
+                  // while the figure row takes the rest. `1fr 1fr` here would
+                  // give a two-line caption half the slide.
+                  gridTemplateColumns: stacked ? '1fr' : '1fr 1fr',
+                  ...(stacked
+                    ? { gridTemplateRows: textFirst ? 'auto 1fr' : '1fr auto' }
+                    : {}) }}>
+      {textFirst ? [textPane, figPane] : [figPane, textPane]}
     </div>
   )
 }
@@ -1035,16 +1203,27 @@ const styles: Record<string, React.CSSProperties> = {
     background: '#14141f', color: '#e8e8f0',
     fontSize: 22, lineHeight: 1.6,
   },
+  // The logical slide stage, centred in the overlay; its size and
+  // `--slide-rem` are set from the fitted scale at the call site.
+  stage: {
+    position: 'absolute', inset: 0, margin: 'auto',
+    fontSize: stageRem(1.375),
+  },
   splitRow: {
-    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem',
+    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: stageRem(2),
     // STRETCH, not center: the figure pane has to fill the row's height or the
     // grid sizes to the tallest CONTENT and the slide keeps a band of dead
     // space under it. The text pane opts back out via splitText's alignSelf.
-    alignItems: 'stretch', margin: '1rem 0',
+    alignItems: 'stretch', margin: `${stageRem(1)} 0`,
     // Grow into the stage like a plain figure cell does.
-    flex: '1 1 var(--spyde-fig-vh, 58vh)', minHeight: 0,
+    flex: '1 1 var(--spyde-fig-basis)', minHeight: 0,
   },
-  splitText: { minWidth: 0, alignSelf: 'center', maxHeight: '100%', overflow: 'hidden' },
+  // START, not center: the row is stretched to the stage, so centring the text
+  // inside it floats the heading at a height that depends on how many bullets
+  // follow — the same drift the content slides had, and it puts the heading out
+  // of line with the top of the picture beside it. Long text fills the column
+  // either way, so this only changes the sparse case, which is the broken one.
+  splitText: { minWidth: 0, alignSelf: 'start', maxHeight: '100%', overflow: 'hidden' },
   splitFig: {
     minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'center',
@@ -1059,11 +1238,11 @@ const styles: Record<string, React.CSSProperties> = {
   slide: {
     position: 'absolute', inset: 0, display: 'none',
     flexDirection: 'column', justifyContent: 'center',
-    padding: '5vh 8vw', overflowY: 'auto',
+    padding: `${stageHeight(5)} ${stageWidth(8)}`, overflowY: 'auto',
   },
   slideActive: { display: 'flex' },
   slideInner: {
-    maxWidth: '60rem', margin: '0 auto', width: '100%',
+    maxWidth: stageRem(60), margin: '0 auto', width: '100%',
     // A flex COLUMN so the figure boxes above can shrink to share the stage.
     // minHeight:0 lets it actually shrink inside the slide's own flex context.
     // flex:1 1 0 (not the default 1 1 auto) so this TAKES the slide's height
@@ -1080,24 +1259,29 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: 'center',
   },
   // A slide with a figure on it: let the data have the screen.
-  slideInnerWide: { maxWidth: '96rem' },
+  slideInnerWide: { maxWidth: stageRem(96) },
+  // A scaled-up text slide: wider column so the bigger type keeps a sane
+  // measure, and a little top padding so the heading isn't jammed to the edge.
+  slideInnerFill: { maxWidth: stageRem(78), paddingTop: stageHeight(2) },
+  // Content slides anchor their heading at the top (see the call site).
+  slideInnerTop: { justifyContent: 'flex-start' },
   // A title slide: content vertically + horizontally centered, tighter column.
   slideTitle: { justifyContent: 'center', textAlign: 'center' },
-  slideInnerTitle: { maxWidth: '48rem' },
+  slideInnerTitle: { maxWidth: stageRem(48) },
   // Per-slide background presets.
   slideBgPlain: { background: '#0e0e16' },
   slideBgAccent: {
     background:
       'radial-gradient(ellipse at 50% 30%, rgba(137,180,250,0.18), transparent 70%), #14141f',
   },
-  // A visual cell is a flex COLUMN that GROWS. The `--spyde-fig-vh` basis still
+  // A visual cell is a flex COLUMN that GROWS. The `--spyde-fig-basis` still
   // divides the stage between N figures, but grow:1 means one figure on a
-  // half-empty slide expands into the dead space instead of stopping at 58vh
+  // half-empty slide expands into the dead space instead of stopping at its basis
   // and leaving the bottom third of the screen blank.
   figure: {
-    margin: '1rem 0', textAlign: 'center',
+    margin: `${stageRem(1)} 0`, textAlign: 'center',
     display: 'flex', flexDirection: 'column',
-    flex: '1 1 var(--spyde-fig-vh, 58vh)', minHeight: 0,
+    flex: '1 1 var(--spyde-fig-basis)', minHeight: 0,
   },
   figBox: {
     // position:relative is LOAD-BEARING — SeamlessFigureFrame's frameHost is
@@ -1112,11 +1296,16 @@ const styles: Record<string, React.CSSProperties> = {
     border: '1px solid #313244', borderRadius: 8, overflow: 'hidden',
     background: '#0e0e16',
   },
-  figImg: { maxWidth: '100%', maxHeight: '100%', height: 'auto' },
+  // A picture fills its box and keeps its aspect. WIDTH 100%, not max-width:
+  // a max-width only ever shrinks, so a photo sat at its natural pixel size on
+  // a big display while the pane around it doubled.
+  figImg: {
+    display: 'block', width: '100%', height: '100%',
+    flex: '1 1 auto', minHeight: 0, objectFit: 'contain',
+  },
   // A photo cell on a slide — fills its share of the stage, aspect preserved.
   slideImg: {
-    display: 'block', margin: '0 auto',
-    maxWidth: '100%', maxHeight: '100%',
+    display: 'block', width: '100%',
     flex: '1 1 auto', minHeight: 0,
     objectFit: 'contain', borderRadius: 8,
   },
@@ -1125,7 +1314,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: '100%', color: '#585b70', fontSize: 14,
   },
   figCaption: {
-    marginTop: '0.5rem', fontSize: '0.85rem', color: '#a6adc8', fontStyle: 'italic',
+    marginTop: stageRem(0.5), fontSize: stageRem(0.85), color: '#a6adc8', fontStyle: 'italic',
     // Never let the caption be squeezed away when the box above it grows.
     flex: '0 0 auto',
   },
@@ -1136,18 +1325,18 @@ const styles: Record<string, React.CSSProperties> = {
   footer: {
     flex: '0 0 auto',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    gap: '1.5rem', marginTop: '1.2rem', paddingTop: '0.7rem',
+    gap: stageRem(1.5), marginTop: stageRem(1.2), paddingTop: stageRem(0.7),
     borderTop: '1px solid var(--spyde-deck-accent, #89b4fa)',
     // The keyline is a hint, not a rule — full-strength accent across the whole
     // slide width reads as a divider competing with the content.
     borderTopColor: 'color-mix(in srgb, var(--spyde-deck-accent, #89b4fa) 35%, transparent)',
-    fontSize: '0.8rem', lineHeight: 1.3,
+    fontSize: stageRem(0.8), lineHeight: 1.3,
     color: 'var(--spyde-deck-muted, #a6adc8)',
   },
-  footerLeft: { display: 'flex', alignItems: 'center', gap: '0.9rem', minWidth: 0 },
+  footerLeft: { display: 'flex', alignItems: 'center', gap: stageRem(0.9), minWidth: 0 },
   footerLogo: { display: 'block', width: 'auto', objectFit: 'contain', flex: '0 0 auto' },
   footerText: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  footerSep: { margin: '0 0.5rem', opacity: 0.55 },
+  footerSep: { margin: `0 ${stageRem(0.5)}`, opacity: 0.55 },
   footerNum: {
     flex: '0 0 auto', fontVariantNumeric: 'tabular-nums',
     color: 'var(--spyde-deck-muted, #a6adc8)',
@@ -1163,10 +1352,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   diagTitle: { fontWeight: 700, marginBottom: 6, color: '#fab387' },
   diagLine: { margin: '1px 0' },
-  liveRow: { marginTop: '1.5rem', textAlign: 'center' },
+  liveRow: { marginTop: stageRem(1.5), textAlign: 'center' },
   liveBtn: {
     background: '#89b4fa', color: '#11111b', border: 'none',
-    borderRadius: 8, padding: '10px 22px', fontSize: 18, fontWeight: 700,
+    borderRadius: 8, padding: `${stageRem(0.625)} ${stageRem(1.375)}`,
+    fontSize: stageRem(1.125), fontWeight: 700,
     cursor: 'pointer', boxShadow: '0 4px 16px rgba(137,180,250,0.35)',
   },
   topBar: {

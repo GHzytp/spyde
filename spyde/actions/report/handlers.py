@@ -2404,28 +2404,127 @@ def report_add_image_cell(session, plot, payload) -> None:
     are refused over :data:`_IMAGE_CELL_MAX_BYTES` so a giant photo can't bloat the
     report."""
     mgr = _ensure_open(session)
-    raw = payload.get("image_b64")
-    data = _decode_data_url(raw) if raw else None
-    if not data:
-        ipc.emit_error("report_add_image_cell: no / undecodable image data.")
+    decoded = _decode_image_payload(payload.get("image_b64"),
+                                    payload.get("image_ext"),
+                                    "report_add_image_cell")
+    if decoded is None:
         return
-    if len(data) > _IMAGE_CELL_MAX_BYTES:
-        mb = _IMAGE_CELL_MAX_BYTES / (1024 * 1024)
-        ipc.emit_error(
-            f"Image is too large ({len(data) / (1024 * 1024):.1f} MB) — the limit "
-            f"is {mb:.0f} MB. Resize it and try again.")
-        return
-    ext = str(payload.get("image_ext", "") or "").lower().lstrip(".")
-    if ext == "jpeg":
-        ext = "jpg"
-    if ext not in IMAGE_EXTS:
-        ext = "png"
+    data, ext = decoded
     cell = Cell(id=new_cell_id(), cell_type="image",
                 caption=str(payload.get("caption", "") or ""), image_ext=ext)
     if payload.get("slide_break") is not None:
         cell.slide_break = bool(payload.get("slide_break"))
     mgr._images[cell.id] = data
     _insert_cell(mgr.doc, cell, payload.get("index"))
+    mgr.dirty = True
+    mgr.emit_state()
+
+
+def _decode_image_payload(raw, ext_raw, verb: str):
+    """Shared decode + size-cap + extension normalisation for the two image
+    verbs. Returns ``(data, ext)`` or ``None`` after emitting the error."""
+    data = _decode_data_url(raw) if raw else None
+    if not data:
+        ipc.emit_error(f"{verb}: no / undecodable image data.")
+        return None
+    if len(data) > _IMAGE_CELL_MAX_BYTES:
+        mb = _IMAGE_CELL_MAX_BYTES / (1024 * 1024)
+        ipc.emit_error(
+            f"Image is too large ({len(data) / (1024 * 1024):.1f} MB) — the limit "
+            f"is {mb:.0f} MB. Resize it and try again.")
+        return None
+    ext = str(ext_raw or "").lower().lstrip(".")
+    if ext == "jpeg":
+        ext = "jpg"
+    if ext not in IMAGE_EXTS:
+        ext = "png"
+    return data, ext
+
+
+def report_set_cell_image(session, plot, payload) -> None:
+    """Fill an EXISTING cell's figure slot with a dropped/pasted PHOTO — the
+    image counterpart of :func:`report_set_split_figure`.
+
+    ``{cell_id, image_b64, image_ext, caption?}``.
+
+    Why this exists: dropping a PNG onto a split cell's empty figure side, or
+    onto an empty figure placeholder, used to fall through to
+    :func:`report_add_image_cell` and APPEND a new image cell BELOW — the slot
+    the user aimed at stayed empty and the picture landed somewhere else. There
+    was no verb that could fill a slot that already existed.
+
+    Four accepted targets:
+
+    * a ``markdown`` cell — the text slide BECOMES a split slide: its prose moves
+      to the text side and the photo fills the other. ``layout`` picks the side
+      (default ``text-left``).
+    * a ``split`` cell — the photo becomes its figure side; the TEXT side
+      (``source``) and ``split_layout`` are untouched. Works whether the side
+      was empty or already held a photo/figure, so this is also the REPLACE
+      path.
+    * an ``image`` cell — swap the bytes in place. Same cell, so its caption,
+      size and slide attributes all survive; only the picture changes.
+    * a ``figure`` cell, placeholder OR filled — there is no "figure cell
+      holding a photo" in the model, so it converts IN PLACE to an ``image``
+      cell, tearing down the live figure window first. Converting rather
+      than replacing is what preserves the cell's identity: its id, and with it
+      the slide attributes that ride on a slide's first cell (``slide_break``,
+      kind, style, speaker notes). Re-creating the cell would silently drop the
+      slide's notes and could merge it into the previous slide.
+
+    Any other cell type is a no-op with an error. Filling with a photo clears
+    any figure previously in the slot (spec, snapshot, baked PNG, figure
+    window), mirroring how :func:`report_set_split_figure` clears a prior photo.
+    """
+    mgr = _ensure_open(session)
+    cell = mgr.doc.cell_by_id(payload.get("cell_id"))
+    if cell is None:
+        ipc.emit_error("report_set_cell_image: unknown cell.")
+        return
+    if cell.cell_type not in ("split", "figure", "image", "markdown"):
+        ipc.emit_error(
+            f"report_set_cell_image: cell is a {cell.cell_type!r}, which has no "
+            f"figure slot to fill.")
+        return
+    decoded = _decode_image_payload(payload.get("image_b64"),
+                                    payload.get("image_ext"),
+                                    "report_set_cell_image")
+    if decoded is None:
+        return
+    data, ext = decoded
+    # Tear down whatever figure was in the slot, exactly as
+    # report_split_remove_figure does, so nothing leaks behind the photo.
+    wid = mgr._window_by_cell.get(cell.id)
+    if wid is not None:
+        mgr._forget(wid)
+    mgr._snapshots.pop(cell.id, None)
+    mgr._baked.pop(cell.id, None)
+    mgr._offline.discard(cell.id)
+    mgr._editing.discard(cell.id)
+    mgr._edit_wiring.pop(cell.id, None)
+    mgr._ann_widgets.pop(cell.id, None)
+    mgr._selected.pop(cell.id, None)
+    _clear_vectors_explorer_cache(cell.id)
+    cell.spec = None
+    if cell.cell_type == "figure":
+        # A placeholder becomes a real photo cell — same id, same slide flags.
+        cell.cell_type = "image"
+        cell.placeholder = False
+    elif cell.cell_type == "markdown":
+        # A TEXT slide becomes a SPLIT slide: the prose it already had moves to
+        # the text side and the picture fills the other. Converting in place
+        # (rather than adding an image cell after it) is what makes this a
+        # layout change instead of a new slide — the cell keeps its id, so the
+        # slide break, kind, style and speaker notes riding on it survive, and
+        # a slide that WAS one text block stays one slide.
+        cell.cell_type = "split"
+        cell.split_layout = model._normalize_split_layout(
+            payload.get("layout") or cell.split_layout)
+    cell.image_ext = ext
+    mgr._images[cell.id] = data
+    caption = str(payload.get("caption", "") or "")
+    if caption:
+        cell.caption = caption
     mgr.dirty = True
     mgr.emit_state()
 
@@ -2437,8 +2536,8 @@ def report_add_split_cell(session, plot, payload) -> None:
     ``payload``: ``{index?, slide_break?, source?, caption?, layout?}``. The figure
     side starts EMPTY (a drop zone) — Wave B wires a figure/photo drop onto it via
     :func:`report_set_split_figure` (or ``report_add_figure`` targeting the split
-    cell's slot). ``layout`` is ``"text-left"`` / ``"text-right"`` (normalised;
-    default ``text-left``). Mirrors :func:`report_add_cell` for the seed-time
+    cell's slot). ``layout`` is any of the four in ``_SPLIT_LAYOUTS``
+    (normalised; default ``text-left``). Mirrors :func:`report_add_cell` for the seed-time
     Present-mode fields so a seeded deck can create it already-marked."""
     from spyde.actions.report.model import _normalize_split_layout
     mgr = _ensure_open(session)
@@ -2473,9 +2572,10 @@ def report_add_figure_placeholder(session, plot, payload) -> None:
 
 
 def report_set_split_layout(session, plot, payload) -> None:
-    """Set a SPLIT cell's ``split_layout`` — ``"text-left"`` (text on the left,
-    figure on the right — the default) or ``"text-right"`` (mirror). Any other
-    value normalises to ``"text-left"``.
+    """Set a SPLIT cell's ``split_layout`` — one of ``"text-left"`` (the
+    default), ``"text-right"``, ``"text-top"`` or ``"text-bottom"``: the first
+    pair is side by side, the second stacks. Any other value normalises to
+    ``"text-left"``.
 
     ``{cell_id, layout}``. A non-split / unknown cell is a no-op (no crash)."""
     from spyde.actions.report.model import _normalize_split_layout
@@ -3042,6 +3142,35 @@ def report_add_figure(session, plot, payload) -> None:
         # Fill an existing SPLIT cell's FIGURE SIDE in place (Wave B's figure-drop-
         # onto-a-split path) — keeps the split cell's text side + layout, replaces
         # any prior photo side with this figure.
+        cell.spec = spec
+        cell.image_ext = ""
+        mgr._images.pop(cell.id, None)
+        if caption:
+            cell.caption = caption
+    elif cell is not None and cell.cell_type == "markdown":
+        # A TEXT slide becomes a SPLIT slide with a LIVE figure beside its prose.
+        # Same in-place conversion as the photo path in report_set_cell_image —
+        # a layout change, not a new slide, so the cell id (and the slide break /
+        # kind / style / speaker notes on it) survives.
+        cell.cell_type = "split"
+        cell.split_layout = model._normalize_split_layout(
+            payload.get("layout") or cell.split_layout)
+        cell.placeholder = False
+        cell.spec = spec
+        cell.image_ext = ""
+        mgr._images.pop(cell.id, None)
+        if caption:
+            cell.caption = caption
+    elif cell is not None and cell.cell_type == "image":
+        # Dropping a live window onto a PHOTO replaces the picture with the
+        # figure. There is no "image cell holding a figure", so it converts IN
+        # PLACE to a figure cell — same id, so the caption, the display size and
+        # the slide attributes riding on a slide's first cell (break / kind /
+        # style / speaker notes) all survive. Appending a new cell instead (what
+        # the else-branch below used to do for an image target) left the photo
+        # sitting above an unrelated new figure.
+        cell.cell_type = "figure"
+        cell.placeholder = False
         cell.spec = spec
         cell.image_ext = ""
         mgr._images.pop(cell.id, None)
