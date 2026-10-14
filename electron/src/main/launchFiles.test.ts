@@ -12,10 +12,12 @@ const CWD = resolve('/data')
 const everythingExists = () => true
 
 test('a packaged launch takes every positional argument after the executable', () => {
-  const argv = ['C:\\Program Files\\SpyDE\\SpyDE.exe', 'C:\\scans\\a.hspy', 'b.mrc']
+  // Absolute on every OS, so it must pass through untouched by the launch directory.
+  const absolute = resolve('/scans/a.hspy')
+  const argv = ['C:\\Program Files\\SpyDE\\SpyDE.exe', absolute, 'b.mrc']
   assert.deepEqual(
     filePathsFromArgv(argv, { defaultApp: false, cwd: CWD, exists: everythingExists }),
-    [resolve('C:\\scans\\a.hspy'), resolve(CWD, 'b.mrc')],
+    [absolute, resolve(CWD, 'b.mrc')],
   )
 })
 
