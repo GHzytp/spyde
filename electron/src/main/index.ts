@@ -668,11 +668,16 @@ function buildMenu(): void {
             const result = await dialog.showOpenDialog(win!, {
               properties: ['openFile', 'multiSelections'],
               filters: [
-                { name: 'EM Data', extensions: ['hspy', 'zspy', 'mrc', 'tif', 'tiff', 'de5', 'csb'] },
+                { name: 'EM Data', extensions: ['hspy', 'zspy', 'mrc', 'tif', 'tiff', 'de5', 'csb', 'dm3', 'dm4', 'emd', 'mib', 'blo', 'rpl'] },
                 { name: 'HyperSpy', extensions: ['hspy', 'zspy'] },
                 { name: 'MRC', extensions: ['mrc'] },
                 { name: 'TIFF', extensions: ['tif', 'tiff'] },
                 { name: 'DE CSB (.csb)', extensions: ['csb'] },
+                { name: 'Gatan DigitalMicrograph (.dm3, .dm4)', extensions: ['dm3', 'dm4'] },
+                { name: 'EMD (.emd)', extensions: ['emd'] },
+                { name: 'Quantum Detectors Merlin (.mib)', extensions: ['mib'] },
+                { name: 'Blockfile (.blo)', extensions: ['blo'] },
+                { name: 'Ripple (.rpl)', extensions: ['rpl'] },
               ],
             })
             if (!result.canceled) {
@@ -816,7 +821,7 @@ ipcMain.handle('spyde:open-file', async () => {
   const result = await dialog.showOpenDialog(win!, {
     properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'EM Data', extensions: ['hspy', 'zspy', 'mrc', 'tif', 'tiff', 'de5', 'csb'] },
+      { name: 'EM Data', extensions: ['hspy', 'zspy', 'mrc', 'tif', 'tiff', 'de5', 'csb', 'dm3', 'dm4', 'emd', 'mib', 'blo', 'rpl'] },
     ],
   })
   if (!result.canceled) {

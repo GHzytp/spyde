@@ -3377,6 +3377,42 @@ wheels = [
 ]
 
 [[package]]
+name = "sparse"
+version = "0.17.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.11' and sys_platform == 'win32'",
+    "python_full_version < '3.11' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "numba", marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/74/5c674277fc3d61bd1863d233a8e1f7ddf35cb1adeeaf9973888629e7a9b1/sparse-0.17.0.tar.gz", hash = "sha256:6b1ad51a810c5be40b6f95e28513ec810fe1c785923bd83b2e4839a751df4bf7", size = 642387, upload-time = "2025-05-20T08:17:03.256Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/fd/42a1720542199ae6ff0f9c37bbd55dd3033ddd7bbe00d68cde09d6824887/sparse-0.17.0-py2.py3-none-any.whl", hash = "sha256:1922d1d97f692b1061c4f03a1dd6ee21850aedc88e171aa845715f5069952f18", size = 259370, upload-time = "2025-05-20T08:17:00.874Z" },
+]
+
+[[package]]
+name = "sparse"
+version = "0.19.2"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and sys_platform == 'win32'",
+    "python_full_version == '3.11.*' and sys_platform == 'win32'",
+    "python_full_version >= '3.12' and sys_platform != 'win32'",
+    "python_full_version == '3.11.*' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "numba", marker = "python_full_version >= '3.11'" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/9f/2cd5f071ce00083f74af90ae2c083393ef3e91ecd78f0f24887871473dd4/sparse-0.19.2.tar.gz", hash = "sha256:0d41a7c3f477cb4265d7193bcf12b0146674d6533ff328afa1e1d0f2b8480f00", size = 814045, upload-time = "2026-08-14T09:37:27.288Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/4e/23e0009b6d5d415c223ea38fcf1e38dc9b0fc6d3ff15b5c5090dcc1f6d88/sparse-0.19.2-py2.py3-none-any.whl", hash = "sha256:2fcad7b83dacb5c70123a7de76db3626cbdaf567fcf12bdbf637aca6c4ee1bbe", size = 155257, upload-time = "2026-08-14T09:37:25.64Z" },
+]
+
+[[package]]
 name = "spglib"
 version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3636,6 +3672,8 @@ dependencies = [
     { name = "scikit-image", version = "0.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "sparse", version = "0.17.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "sparse", version = "0.19.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "sympy", version = "1.13.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
     { name = "sympy", version = "1.14.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
     { name = "torch", version = "2.6.0+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "sys_platform == 'win32'" },
@@ -3717,6 +3755,7 @@ requires-dist = [
     { name = "scikit-image" },
     { name = "scipy" },
     { name = "setuptools-scm", marker = "extra == 'tests'" },
+    { name = "sparse" },
     { name = "spglib", marker = "extra == 'tests'" },
     { name = "sphinx", marker = "extra == 'doc'" },
     { name = "sphinx-design", marker = "extra == 'doc'" },

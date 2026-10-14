@@ -25,7 +25,33 @@ from de_shell.ipc import emit, emit_status, emit_error
 
 log = logging.getLogger(__name__)
 
-SUPPORTED_EXTS = (".hspy", ".zspy", ".mrc", ".tif", ".tiff", ".de5", ".csb")
+# Every extension here opens through ``load_aligned`` as a LAZY signal, so a
+# format belongs on this list only if its reader leaves the data on disk when
+# asked to be lazy: a memory map or an HDF5/zarr dataset read per chunk. Several
+# RosettaSciIO readers accept ``lazy=True`` and then read the whole file anyway,
+# which on a multi-GB scan is the load this app exists to avoid:
+#   * TIA ``.ser``/``.emi`` reads the whole file in a single task, so every
+#     navigator move into an uncached file reads all of it;
+#   * TVIPS ``.tvips`` hands dask an in-memory copy of the recording;
+#   * Topspin ``.app5`` and Semper ``.unf`` ignore the flag and read eagerly.
+# Ambiguous extensions (``.h5``, EMPAD's ``.xml``) are left out because several
+# readers claim them, and ``.npy`` because it carries no navigation axes, so a
+# 4-D array would open with no navigator. ``test_lazy_formats.py`` pins both halves.
+SUPPORTED_EXTS = (
+    ".hspy", ".zspy", ".mrc", ".tif", ".tiff", ".de5", ".csb",
+    ".dm3", ".dm4",          # Gatan DigitalMicrograph
+    ".emd",                  # Velox (incl. EDS spectrum images) and Berkeley EMD
+    ".mib",                  # Quantum Detectors Merlin (beside its .hdr)
+    ".blo",                  # NanoMegas / ASTAR blockfile
+    ".rpl",                  # Ripple header (beside its .raw)
+)
+
+#: Formats that store their own navigation shape and calibration, so the
+#: open-time scan-shape prompt has nothing to ask. The rest (``.mrc``,
+#: ``.tif``, ``.mib``) can arrive as a flat stack whose
+#: scan grid only the user knows.
+SELF_DESCRIBING_EXTS = (".zspy", ".zarr", ".hspy", ".dm3", ".dm4", ".emd",
+                        ".blo", ".rpl")
 
 # Extensions whose "file" is actually a DIRECTORY (a Zarr store). `.zspy` (and a
 # bare `.zarr`) is a nested-group folder, not a single file — so `os.path.isfile`
@@ -501,10 +527,9 @@ class FileLoaderMixin:
 
     @staticmethod
     def _is_self_describing(path: str) -> bool:
-        """True for HyperSpy-native formats that store full axes (shape +
-        calibration) — .zspy/.zarr/.hspy. These reload with correct dimensions, so
-        the scan-shape prompt (for ambiguous raw .mrc/.tif) should be skipped."""
-        return _path_ext(path) in (".zspy", ".zarr", ".hspy")
+        """True for formats that store full axes (shape + calibration), so the
+        scan-shape prompt is skipped. See ``SELF_DESCRIBING_EXTS``."""
+        return _path_ext(path) in SELF_DESCRIBING_EXTS
 
     # Axis names identifying a MOVIE / sequential-stack leading axis (NOT a
     # foldable spatial scan): a TIME axis (DE-MRC non-scanning movies →
