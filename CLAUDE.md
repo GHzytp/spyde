@@ -172,7 +172,7 @@ Tests are **Qt-free** (no `pytest-qt`, no `QApplication`). They build a real `Se
 `captured_messages` monkeypatches `ipc.emit` (bound into `session.py` at import) to capture outgoing messages. `window["window"]` is the `Session`; `window["plots"]` is `session._plots`. Each fixture calls `session.shutdown()` on teardown.
 
 - **`torch`-CUDA work segfaults under the pytest process on Windows** (harness interaction, not a code bug — fine in the real app / plain Python). Run GPU correctness tests in a **subprocess** that prints a JSON result and `os._exit(0)` after (see `test_neural_detect.py`). GUI-wiring tests that exercise the path should force the CPU branch (`monkeypatch gpu_available → False`).
-- Distributed repros that spin a real `LocalCluster(processes=True)` likewise need a subprocess and won't run inside an agent sandbox — run them yourself (e.g. `uv run python -m spyde.tests.repro_write_cancelled`).
+- Anything that spins a real `LocalCluster(processes=True)` likewise needs a subprocess and won't run inside an agent sandbox — run it yourself.
 - Tests are written as classes with methods (e.g. `class TestActions` → `def test_center_direct_beam`).
 
 ## Verify by RUNNING THE APP — headless tests + typecheck are NOT verification
@@ -533,9 +533,7 @@ poll for the cheap nav path. This is the fast common case and stays fully synchr
 > stale frame — pinning `CachedDaskArray._client` to the cluster and holding the
 > get_inds future alive (`plot._inflight_getinds`) so distributed didn't
 > release-key-cancel it. Both are now MOOT: the read is serial + blocking, so nothing
-> is submitted to cancel and no future can be lost. The retired repros
-> (`repro_cache_client_thread.py`, `repro_write_cancelled.py`) documented that dead
-> machinery. Don't add a buffer ring or self-pacing (tried, both worse: wedged gate /
+> is submitted to cancel and no future can be lost. Don't add a buffer ring or self-pacing (tried, both worse: wedged gate /
 > infinite ~6-frame re-emit). NB: the safety came from **seriality + blocking**, not
 > from which `get_index` branch runs — a serial blocking read is correct either way
 > (the `_client=None` patch just makes it also FAST; see §3).
