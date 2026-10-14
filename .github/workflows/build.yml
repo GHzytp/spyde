@@ -375,22 +375,29 @@ jobs:
       # ~/.cache/pooch is exspy's GOS databases (42 MB each, Zenodo) — building
       # any EELSCLEdge fetches one on first use, which at Zenodo's ~700 kB/s
       # blows straight through a spec's assertion timeout (eels_edge_component
-      # died at 78% of the download). ~/.cache/spyde is the CALIBRATED SPED-Ag
-      # scan (spyde/external/emdatabase/sped_ag.py, Zenodo record 21790591) that
-      # the sped_ag specs actually load: 214 MB at Zenodo's ~700 kB/s is ~300 s,
-      # the whole of a spec's setup budget, so uncached it timed out nearly every
-      # run. v3 key: a saved entry is immutable, and v2's has no spyde dir.
+      # died at 78% of the download). v2 key: the entry now carries both dirs.
       - name: Cache example datasets (pooch)
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/pyxem
             ~/.cache/pooch
-            ~/.cache/spyde
-          key: pooch3-pyxem-${{ hashFiles('uv.lock') }}
-          restore-keys: |
-            pooch3-pyxem-
-            pooch2-pyxem-
+          key: pooch2-pyxem-${{ hashFiles('uv.lock') }}
+          restore-keys: pooch2-pyxem-
+
+      # The CALIBRATED SPED-Ag scan (spyde/external/emdatabase/sped_ag.py,
+      # Zenodo record 21790591) is the one the sped_ag specs load, written under
+      # pooch.os_cache("spyde"). 214 MB at Zenodo's ~700 kB/s is ~300 s, a spec's
+      # whole setup budget, so uncached it timed out on most runs. Its own cache
+      # entry, not another path on the one above: actions/cache matches entries
+      # on their path list, so adding a path orphans every existing entry and
+      # every shard re-downloads all of it at once. Keyed on the module that
+      # names the record, so a new record re-downloads.
+      - name: Cache the calibrated SPED-Ag scan
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/spyde
+          key: sped-ag-calibrated-${{ hashFiles('spyde/external/emdatabase/sped_ag.py') }}
 
       # Pay the heavy Zenodo downloads OUTSIDE any spec's timeout budget
       # (no-ops on a warm cache; pooch just re-verifies hashes). Two reasons
