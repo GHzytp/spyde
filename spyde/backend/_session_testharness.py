@@ -643,15 +643,10 @@ class TestHarnessMixin:
         diffraction peaks — needed to SEE the overlay working (not just
         render). Downloads on first use (pooch-cached)."""
         import hyperspy.api as hs
-        import pooch
 
-        from spyde.external.emdatabase.sped_ag import DATASET
+        from spyde.external.emdatabase.sped_ag import fetch
 
-        path = pooch.retrieve(
-            url=f"{DATASET['source']}/{DATASET['file']}",
-            known_hash=DATASET["checksum"],
-            fname="SPED-Ag-calibrated.zspy", path=pooch.os_cache("spyde"))
-        s = hs.load(path)
+        s = hs.load(fetch())
         # The fixture is only worth anything if it is the calibrated copy; a
         # silently halved axis is the exact failure this loader exists to avoid.
         scale = float(s.axes_manager.signal_axes[0].scale)

@@ -385,6 +385,20 @@ jobs:
           key: pooch2-pyxem-${{ hashFiles('uv.lock') }}
           restore-keys: pooch2-pyxem-
 
+      # The CALIBRATED SPED-Ag scan (spyde/external/emdatabase/sped_ag.py,
+      # Zenodo record 21790591) is the one the sped_ag specs load, written under
+      # pooch.os_cache("spyde"). 214 MB at Zenodo's ~700 kB/s is ~300 s, a spec's
+      # whole setup budget, so uncached it timed out on most runs. Its own cache
+      # entry, not another path on the one above: actions/cache matches entries
+      # on their path list, so adding a path orphans every existing entry and
+      # every shard re-downloads all of it at once. Keyed on the module that
+      # names the record, so a new record re-downloads.
+      - name: Cache the calibrated SPED-Ag scan
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/spyde
+          key: sped-ag-calibrated-${{ hashFiles('spyde/external/emdatabase/sped_ag.py') }}
+
       # Pay the heavy Zenodo downloads OUTSIDE any spec's timeout budget
       # (no-ops on a warm cache; pooch just re-verifies hashes). Two reasons
       # this is a step of its own: (1) eels_edge_component died at 78% of a
@@ -394,7 +408,7 @@ jobs:
       # saved, so unless every shard prefetches the full set before running,
       # the saved entry is permanently missing the big file. GOS URLs/hashes
       # are read from the installed exspy so a version bump can't go stale.
-      - name: Prefetch exspy GOS databases + sped_ag
+      - name: Prefetch exspy GOS databases + both SPED-Ag copies
         run: |
           uv run python -c "
           from exspy._misc.eels import gosh_gos as g
@@ -403,6 +417,8 @@ jobs:
               print(src, '->', pooch.retrieve(url=spec['URL'], known_hash=spec['KNOWN_HASH'], progressbar=False))
           import pyxem.data as pxd
           print('sped_ag ->', pxd.sped_ag(allow_download=True, lazy=True))
+          from spyde.external.emdatabase.sped_ag import fetch
+          print('sped_ag (calibrated) ->', fetch())
           "
 
       - name: Run Electron e2e
