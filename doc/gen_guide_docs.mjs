@@ -13,8 +13,8 @@
  * data — no JSX, no React — so this is a plain, dependency-free bundle), require
  * it, and emit rST. Regenerate after editing any guide:
  *
- *     node scripts/gen_guide_docs.mjs           # write doc/tutorials/
- *     node scripts/gen_guide_docs.mjs --check   # fail if it would change
+ *     node doc/gen_guide_docs.mjs           # write doc/tutorials/
+ *     node doc/gen_guide_docs.mjs --check   # fail if it would change
  *
  * The generated pages are COMMITTED, so a docs build needs only Python — Node is
  * required to regenerate, not to build. `--check` is the drift guard.
@@ -131,7 +131,7 @@ function guideToRst(guide) {
   L.push('   GENERATED FILE — do not edit by hand.')
   L.push('   Source: guides/' + guide.id + '.ts (the same walkthrough the in-app')
   L.push('   guided tour renders). Regenerate with:')
-  L.push('       node scripts/gen_guide_docs.mjs')
+  L.push('       node doc/gen_guide_docs.mjs')
   L.push('')
   L.push(`.. _tutorial-${guide.id}:`)
   L.push('')
@@ -203,7 +203,7 @@ function indexRst(guides) {
   const L = []
   L.push('..')
   L.push('   GENERATED FILE — do not edit by hand.')
-  L.push('   Regenerate with: node scripts/gen_guide_docs.mjs')
+  L.push('   Regenerate with: node doc/gen_guide_docs.mjs')
   L.push('')
   L.push('.. _tutorials-index:')
   L.push('')
@@ -266,7 +266,7 @@ if (check) {
     }
   }
   if (bad) {
-    console.error('\nRun `node scripts/gen_guide_docs.mjs` and commit the result.')
+    console.error('\nRun `node doc/gen_guide_docs.mjs` and commit the result.')
     process.exit(1)
   }
   console.log(`doc/tutorials/ is up to date (${files.size} files).`)

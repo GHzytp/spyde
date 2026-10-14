@@ -181,7 +181,7 @@ jobs:
       # release being cut — so the GitHub front page + docs point at it the moment
       # the release publishes. Idempotent (rewrites only between the markers).
       - name: Update download links (README + docs)
-        run: node scripts/update-download-links.mjs "${{ steps.version.outputs.new_version }}" "${{ github.repository }}"
+        run: node .github/scripts/update-download-links.mjs "${{ steps.version.outputs.new_version }}" "${{ github.repository }}"
 
       # Assemble CHANGELOG.rst from the per-PR fragments in upcoming_changes/
       # and delete them. --yes skips the interactive confirm; the version is

@@ -123,10 +123,7 @@ function ReportView({ report }: { report: Report }) {
       {state === 'missing' ? (
         <div style={styles.notBuilt} data-testid="docs-report-missing">
           <strong>Not in this checkout.</strong> The exported report file is
-          missing, so there is nothing to show. Rebuild it with:
-          {report.build && (
-            <pre style={styles.buildPre}>{report.build.join('\n')}</pre>
-          )}
+          missing, so there is nothing to show.
         </div>
       ) : (
         <div style={styles.reportWrap}>
@@ -384,12 +381,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 8, border: '1px solid #313244',
     background: 'rgba(249,226,175,0.08)', padding: '14px 16px',
     fontSize: 13.5, color: '#bac2de', lineHeight: 1.6,
-  },
-  buildPre: {
-    margin: '10px 0 0', padding: '10px 12px', borderRadius: 6,
-    background: '#11111b', border: '1px solid #313244', color: '#a6adc8',
-    fontSize: 12.5, overflowX: 'auto',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   },
   links: { marginTop: 18, display: 'flex', flexDirection: 'column', gap: 8 },
   linksLabel: {

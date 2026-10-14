@@ -1,6 +1,6 @@
 ..
    GENERATED FILE — do not edit by hand.
-   Regenerate with: node scripts/gen_guide_docs.mjs
+   Regenerate with: node doc/gen_guide_docs.mjs
 
 .. _tutorials-index:
 

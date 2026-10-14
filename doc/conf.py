@@ -31,7 +31,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # -- Tutorial screenshots ----------------------------------------------------
 # doc/tutorials/*.rst is GENERATED from the guides/ walkthroughs (the single
 # source the in-app guided tour also renders) by
-# ``node scripts/gen_guide_docs.mjs``. Its ``.. image::`` targets live under
+# ``node doc/gen_guide_docs.mjs``. Its ``.. image::`` targets live under
 # ``doc/tutorials/media/<guide>/`` — but the PNGs themselves are produced by the
 # Playwright run ``guide_screenshots.spec.ts``, which writes them into
 # ``docs-site/public/media/`` for the docs website.
