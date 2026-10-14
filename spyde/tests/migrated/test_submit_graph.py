@@ -6,7 +6,7 @@ WITHOUT the distributed-scheduler round-trip. submit_graph runs a lazy dask slic
 on OUR ThreadPoolExecutor with the ``synchronous`` scheduler, so we get a real
 concurrent.futures.Future (cancel + done_callback) while dask does not spawn a
 nested pool. The SAME path reads a lazy CROP (a pure graph op), so crop-then-scrub
-just works. See repro_movie_scrub.py for the real-movie timing proof.
+just works.
 """
 from __future__ import annotations
 

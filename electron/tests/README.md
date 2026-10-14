@@ -40,10 +40,6 @@ Slow (real dask):
 - `orientation_workflow`, `virtual_imaging_workflow`, `nav_drag_distributed`
   — their features under a real cluster.
 
-Diagnostic (opt-in, never in the default run):
-- `_probe_fv_stall.spec.ts` — `SPYDE_PROBE=1` — zero-interaction batch health
-  with periodic `dump_dask_state` snapshots. Use when a compute "hangs".
-
 Real-data tier: `*.real.spec.ts` + `guide_screenshots` via
 `--project=electron-real` (downloads pyxem datasets; nightly/local only).
 

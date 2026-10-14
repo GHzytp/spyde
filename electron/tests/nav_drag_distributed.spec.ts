@@ -105,8 +105,7 @@ test('crosshair drag across chunks updates the DP on the distributed path', asyn
   // allowlist), so it structurally CANNOT reach this grabber — the same trap
   // as console_preview_result. The backend's "[REDRAW] test_nav_drag: N/M
   // moves changed" verdict goes through logging → stderr, which the main
-  // process DOES tee — wait for that line instead (the movie_nav_scrub /
-  // tiered_nav_read pattern).
+  // process DOES tee — wait for that line instead.
   let verdict: string | undefined
   for (let i = 0; i < 180 && !verdict; i++) {
     verdict = backendLines.find((l) => /test_nav_drag:\s*\d+\/\d+\s+moves changed/.test(l))

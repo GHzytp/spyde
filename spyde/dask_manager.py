@@ -363,7 +363,7 @@ class DaskManager:
             # compute_dispatch.poke_scheduler + the dispatcher/orchestrate
             # no-progress watchdogs (a permanent 1 Hz keepalive here was tried
             # in three variants and did NOT reliably unstick delivery — only
-            # the on-stall full-poke trio did; see repro_batch_stall.py).
+            # the on-stall full-poke trio did).
 
             # Scheduler + client are usable NOW — report ready immediately so the
             # app stops waiting. Workers spawn next (logged with their own timing).

@@ -6,8 +6,7 @@ missing at least one of its three properties:
 
   1. **batched submit** — `client.compute(list)` once per top-up, not a blocking
      scheduler round trip per chunk.  Measured end to end on the real 977-frame
-     / 15.3 GB in-situ movie (977 nav chunks, 4 workers — see
-     `benchmark_nav_fill_dispatch.py`): the per-chunk loop
+     / 15.3 GB in-situ movie (977 nav chunks, 4 workers): the per-chunk loop
      spent **9.86 s** in submission with the GIL held in the client process, so
      nothing else in the backend could run and the first navigator pixel
      appeared at **16.4 s**.  Through the dispatcher: submit 0.00 s, first pixel

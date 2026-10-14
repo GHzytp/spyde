@@ -11,8 +11,7 @@ Covers:
   * auto beam-stop detection (detect_beamstop / _auto_beamstop_from_signal).
 
 GPU note: torch-CUDA segfaults under pytest on Windows, so these exercise the
-numpy DoG path (the GPU path is validated for parity separately in
-benchmark_find_vectors_dog.py, which runs in a subprocess).
+numpy DoG path.
 """
 from __future__ import annotations
 

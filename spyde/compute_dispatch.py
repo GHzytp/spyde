@@ -99,9 +99,8 @@ def poke_scheduler(client, label: str = "poke") -> None:
 
     On this Windows/Electron-spawned backend, submitted tasks can sit
     {waiting, processing} with every worker idle INDEFINITELY — task delivery
-    only resumes after certain client↔scheduler/worker traffic (measured with
-    _probe_fv_stall.spec.ts; standalone the same code is healthy, see
-    repro_batch_stall.py). No SINGLE call type unsticks it reliably
+    only resumes after certain client↔scheduler/worker traffic (measured in the
+    running app; the same code run standalone is healthy). No SINGLE call type unsticks it reliably
     (stochastic across runs), but the full trio below did 4/4 times, ~4 s to
     completion each. The stall watchdogs call this every few seconds while a
     compute makes no progress — a no-op cost on a healthy cluster (it never
