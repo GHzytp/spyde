@@ -67,10 +67,38 @@ mac:
   # build rather than failing — so dev/local builds still work; only CI with the
   # cert imported actually signs. To force-disable signing (emergency unsigned
   # release), set CSC_IDENTITY_AUTO_DISCOVERY=false in the build env.
+  # Finder's "Open With". SpyDE's own formats rank Owner, so a double-click
+  # opens them in SpyDE; generic ones rank Alternate, so SpyDE is offered but
+  # never displaces the app the user already opens them with. .zspy is left
+  # out: it is a directory, and declaring it a package would make Finder show
+  # every .zspy as an opaque file rather than a folder — not ours to decide.
+  # No `icon`: a type without one gets the app icon.
+  fileAssociations:
+    - { ext: hspy, name: HyperSpy Dataset, role: Editor, rank: Owner }
+    - { ext: de5, name: Direct Electron DE5 Data, role: Editor, rank: Owner }
+    - { ext: csb, name: Direct Electron Event Stream, role: Editor, rank: Owner }
+    - { ext: mrc, name: MRC Image Stack, role: Viewer, rank: Alternate }
+    - { ext: [tif, tiff], name: TIFF Image, role: Viewer, rank: Alternate }
+    - { ext: [dm3, dm4], name: Gatan DigitalMicrograph Image, role: Viewer, rank: Alternate }
+    - { ext: emd, name: EMD Dataset, role: Viewer, rank: Alternate }
+    - { ext: mib, name: Quantum Detectors Merlin Data, role: Viewer, rank: Alternate }
+    - { ext: blo, name: Blockfile 4D-STEM Data, role: Viewer, rank: Alternate }
+    - { ext: rpl, name: Ripple Header, role: Viewer, rank: Alternate }
 
 win:
   target: [nsis]
   icon: ../spyde/Spyde.png
+  # Double-click opens SpyDE's own formats: electron-builder's NSIS
+  # association writes `.<ext>` = <name>, i.e. it makes SpyDE the DEFAULT app.
+  # That is exactly why only these three are here. Generic formats (.mrc, .tif,
+  # .dm4, …) are registered for "Open with" only, by customInstall in
+  # build/installer.nsh, so installing SpyDE never takes them over. .zspy is a
+  # directory, which Windows cannot associate. `name` is the ProgID; with no
+  # `icon`, the type shows the app icon.
+  fileAssociations:
+    - { ext: hspy, name: SpyDE.hspy, description: HyperSpy dataset }
+    - { ext: de5, name: SpyDE.de5, description: Direct Electron DE5 data }
+    - { ext: csb, name: SpyDE.csb, description: Direct Electron event stream }
 
 # Per-user NSIS installer: no admin, Start-Menu + desktop shortcuts, uninstaller,
 # user-chosen install dir.

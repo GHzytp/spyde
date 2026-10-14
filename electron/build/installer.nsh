@@ -118,3 +118,63 @@ Var spydeSetupPid
   Pop $R0
   Pop $0
 !macroend
+
+; ---------------------------------------------------------------------------
+; "OPEN WITH" FOR FORMATS SPYDE DOES NOT OWN
+;
+; electron-builder's own `fileAssociations` (see electron-builder.yml) writes
+; `Software\Classes\.<ext>` = <its ProgID>, which makes SpyDE the DEFAULT app
+; for that extension. That is right for SpyDE's own formats and wrong for
+; generic ones -- a .tif or a .dm4 has an owner on most microscopy PCs, and
+; installing SpyDE must not take it over. So these are registered here instead,
+; and only where Explorer looks for "Open with" candidates: a ProgID named in
+; `.<ext>\OpenWithProgids`, plus `Applications\SpyDE.exe\SupportedTypes`. The
+; extension's default value is never written, so the user's default app stays.
+;
+; The list must cover every generic extension in SUPPORTED_EXTS
+; (spyde/backend/_session_files.py); test_file_associations.py holds the two
+; together, and the uninstall list to the install list.
+
+!macro spydeOpenWith EXT DESCRIPTION
+  WriteRegStr SHELL_CONTEXT "Software\Classes\SpyDE.${EXT}" "" "${DESCRIPTION}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\SpyDE.${EXT}\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\SpyDE.${EXT}\shell\open\command" "" '"$appExe" "%1"'
+  WriteRegNone SHELL_CONTEXT "Software\Classes\.${EXT}\OpenWithProgids" "SpyDE.${EXT}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".${EXT}" ""
+!macroend
+
+!macro spydeForgetOpenWith EXT
+  DeleteRegValue SHELL_CONTEXT "Software\Classes\.${EXT}\OpenWithProgids" "SpyDE.${EXT}"
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\SpyDE.${EXT}"
+!macroend
+
+!macro customInstall
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}" "FriendlyAppName" "${PRODUCT_NAME}"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\shell\open\command" "" '"$appExe" "%1"'
+  !insertmacro spydeOpenWith "mrc" "MRC image stack"
+  !insertmacro spydeOpenWith "tif" "TIFF image"
+  !insertmacro spydeOpenWith "tiff" "TIFF image"
+  !insertmacro spydeOpenWith "dm3" "Gatan DigitalMicrograph image"
+  !insertmacro spydeOpenWith "dm4" "Gatan DigitalMicrograph image"
+  !insertmacro spydeOpenWith "emd" "EMD dataset"
+  !insertmacro spydeOpenWith "mib" "Quantum Detectors Merlin data"
+  !insertmacro spydeOpenWith "blo" "Blockfile 4D-STEM data"
+  !insertmacro spydeOpenWith "rpl" "Ripple header"
+  ; SHCNE_ASSOCCHANGED, so Explorer offers SpyDE without a sign-out.
+  System::Call 'shell32::SHChangeNotify(i, i, i, i) v (0x08000000, 0x1000, 0, 0)'
+!macroend
+
+!macro customUnInstall
+  !insertmacro spydeForgetOpenWith "mrc"
+  !insertmacro spydeForgetOpenWith "tif"
+  !insertmacro spydeForgetOpenWith "tiff"
+  !insertmacro spydeForgetOpenWith "dm3"
+  !insertmacro spydeForgetOpenWith "dm4"
+  !insertmacro spydeForgetOpenWith "emd"
+  !insertmacro spydeForgetOpenWith "mib"
+  !insertmacro spydeForgetOpenWith "blo"
+  !insertmacro spydeForgetOpenWith "rpl"
+  DeleteRegKey SHELL_CONTEXT "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}"
+  System::Call 'shell32::SHChangeNotify(i, i, i, i) v (0x08000000, 0x1000, 0, 0)'
+!macroend
