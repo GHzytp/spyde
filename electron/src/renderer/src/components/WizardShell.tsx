@@ -306,7 +306,7 @@ export const S: Record<string, React.CSSProperties> = {
     position: 'relative', width: 22, height: 12, borderRadius: 6, background: '#313244',
     border: '1px solid #45475a', boxSizing: 'border-box', flex: '0 0 auto', transition: 'background 0.12s',
   },
-  toggleTrackOn: { background: '#89b4fa', borderColor: '#89b4fa' },
+  toggleTrackOn: { background: '#89b4fa', border: '1px solid #89b4fa' },
   toggleKnob: {
     position: 'absolute', top: 1, left: 1, width: 8, height: 8, borderRadius: 4,
     background: '#a6adc8', transition: 'left 0.12s',
