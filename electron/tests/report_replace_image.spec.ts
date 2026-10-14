@@ -57,9 +57,13 @@ async function dropPngOn(page: any, selector: string, tint: number) {
     dt.items.add(file)
     const el = document.querySelector(sel)
     if (!el) throw new Error(`no element for ${sel}`)
+    // At the element's centre, as a real drop carries a pointer position — a
+    // text cell treats its top and bottom edges as the gap between cells.
+    const box = el.getBoundingClientRect()
+    const clientX = box.left + box.width / 2, clientY = box.top + box.height / 2
     for (const type of ['dragenter', 'dragover', 'drop']) {
       el.dispatchEvent(new DragEvent(type, {
-        bubbles: true, cancelable: true, dataTransfer: dt,
+        bubbles: true, cancelable: true, dataTransfer: dt, clientX, clientY,
       }))
     }
   }, { sel: selector, tint })

@@ -107,13 +107,20 @@ export interface ReplaceDrop {
  * highlight. Handlers stopPropagation so the drop never also reaches the
  * sidebar body, which would append a NEW cell underneath — the exact bug this
  * exists to avoid.
+ *
+ * `accepts` lets a target decline a drop it would otherwise claim, so the
+ * drag falls through to the sidebar body and inserts a new cell instead.
  */
-export function useReplaceDrop(cellId: string): ReplaceDrop {
+export function useReplaceDrop(
+  cellId: string,
+  accepts: (e: React.DragEvent) => boolean = () => true,
+): ReplaceDrop {
   const { sendAction } = useSpyDE()
   const [active, setActive] = React.useState(false)
 
   const onDragOver = (e: React.DragEvent) => {
     if (!isPillDrag(e.dataTransfer) && !hasImageFiles(e.dataTransfer)) return
+    if (!accepts(e)) { setActive(false); return }
     e.preventDefault()
     e.stopPropagation()
     e.dataTransfer.dropEffect = 'copy'
@@ -129,6 +136,7 @@ export function useReplaceDrop(cellId: string): ReplaceDrop {
   }
 
   const onDrop = (e: React.DragEvent) => {
+    if (!accepts(e)) { setActive(false); return }
     // FILE first, so it can never be mistaken for a pill.
     if (hasImageFiles(e.dataTransfer)) {
       e.preventDefault()

@@ -19,6 +19,7 @@ import { reportClipboard } from '../kernel/reportClipboard'
 import type { ReportCell as ReportCellType } from '../kernel/protocol'
 import { CellChrome } from './CellChrome'
 import { useReplaceDrop } from './useReplaceDrop'
+import { useSpyDE } from '../kernel/SpyDEContext'
 
 // One-time scoped markdown stylesheet for the dark theme. Injected under a
 // `.spyde-md` wrapper so it never leaks into the rest of the app. Sizes are in
@@ -353,10 +354,29 @@ export function MarkdownPane({
   )
 }
 
+// How far into a cell, from its top or bottom, a drop still means "between the
+// cells". Capped at a quarter of the cell, so a one-line cell keeps a body.
+const CELL_EDGE_PX = 14
+
+/** True when a drag is over the top or bottom edge of the cell it targets. */
+function inCellEdge(e: React.DragEvent): boolean {
+  const box = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  const edge = Math.min(CELL_EDGE_PX, box.height / 4)
+  return e.clientY < box.top + edge || e.clientY > box.bottom - edge
+}
+
 export function ReportCell({ cell, onUpdate, onRemove, index, dragProps }: Props) {
   // Drop a figure/window or an image file here to turn this TEXT slide into a
   // SPLIT slide (the backend converts the cell in place, keeping its prose).
-  const replace = useReplaceDrop(cell.id)
+  //
+  // Only on a slide, and only over the cell's body. In a report a paragraph is
+  // prose, not a slide, and a drop on it inserts a figure beside it; and the
+  // cell's top and bottom edges are the gap between two cells, where a drop
+  // inserts a new cell. Claiming either would swallow the sidebar body's
+  // insert-between drop.
+  const { state } = useSpyDE()
+  const onSlide = state.report?.type === 'presentation'
+  const replace = useReplaceDrop(cell.id, (e) => onSlide && !inCellEdge(e))
   const [editing, setEditing] = useState(false)
   const [hover, setHover] = useState(false)
   const rendered = React.useMemo(() => renderMarkdown(cell.source ?? ''), [cell.source])
