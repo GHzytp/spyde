@@ -1,1 +1,0 @@
-The "Open full Dask dashboard" menu item and the dashboard button no longer disappear when the analysis backend finishes starting after its cluster.
