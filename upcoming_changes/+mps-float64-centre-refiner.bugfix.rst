@@ -1,0 +1,1 @@
+Find Diffraction Vectors with the neural detector works on Apple-silicon Macs again: the centre-refine step converted its result to 64-bit floats on the GPU, which Apple's Metal backend does not support, so every batch failed and no peaks appeared.

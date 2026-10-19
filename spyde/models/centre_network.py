@@ -254,7 +254,7 @@ class NetworkRefiner:
                 | (sigma >= self.max_sigma_fraction * radius)
             centre[declined] = float("nan")
             sigma[declined] = float("nan")
-            result = centre.double().cpu().numpy()
+            result = centre.cpu().double().numpy()
             sigma = sigma.float().cpu().numpy()
         return result, sigma
 
