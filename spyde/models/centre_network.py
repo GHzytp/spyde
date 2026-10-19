@@ -224,7 +224,7 @@ class NetworkRefiner:
         from spyde.device_lock import accelerator_lock
 
         if len(crops) == 0:
-            return np.zeros((0, 2)), np.zeros(0, np.float32)
+            return np.zeros((0, 2), np.float32), np.zeros(0, np.float32)
         if self.needs_partner and partner_crops is None:
             raise ValueError("this centre network needs each disk's Friedel-mirror window")
         radius = float(spot_radius)
@@ -254,7 +254,7 @@ class NetworkRefiner:
                 | (sigma >= self.max_sigma_fraction * radius)
             centre[declined] = float("nan")
             sigma[declined] = float("nan")
-            result = centre.cpu().double().numpy()
+            result = centre.float().cpu().numpy()
             sigma = sigma.float().cpu().numpy()
         return result, sigma
 

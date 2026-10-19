@@ -277,9 +277,8 @@ class TestRefineStep:
                                    rtol=0, atol=5e-5)
 
     def test_runs_on_apple_mps(self):
-        """MPS has no float64, so the centres must leave the device before
-        they are widened — the cast the other way round failed every neural
-        batch on a Mac."""
+        """MPS has no float64, so the centres stay float32 on the device — a
+        float64 cast there failed every neural batch on a Mac."""
         import torch
 
         if not torch.backends.mps.is_available():
