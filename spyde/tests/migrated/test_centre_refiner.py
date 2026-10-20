@@ -276,6 +276,24 @@ class TestRefineStep:
         np.testing.assert_allclose(got[np.isfinite(got)], sigma[np.isfinite(sigma)],
                                    rtol=0, atol=5e-5)
 
+    def test_runs_on_apple_mps(self):
+        """MPS has no float64, so the centres stay float32 on the device — a
+        float64 cast there failed every neural batch on a Mac."""
+        import torch
+
+        if not torch.backends.mps.is_available():
+            pytest.skip("no Apple MPS device")
+        from spyde.models import centre_network, registry
+
+        registry._invalidate_manifest()
+        entry = registry._entry(CENTRE_MODEL)
+        refiner = centre_network.load_refiner(registry._resolve_weights(entry), "mps",
+                                              arch=entry.get("arch"),
+                                              contract=entry.get("input"))
+        frames, seeds, radius, centres, _ = _f5_reference("gan")
+        positions, _ = refine_centres(frames, seeds, radius, refiner)
+        np.testing.assert_allclose(np.concatenate(positions), centres, rtol=0, atol=1e-3)
+
     def test_a_second_pass_only_for_disks_that_moved(self, f5):
         """The re-crop pass sees only the disks the first moved by over 0.15 R."""
         frames, seeds, radius, _, _ = _f5_reference("gan")
