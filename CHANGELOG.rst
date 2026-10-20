@@ -12,6 +12,15 @@ Earlier releases are described by their GitHub release notes and tags.
 
 .. towncrier release notes start
 
+0.6.0-rc.3 (2026-10-20)
+=======================
+
+Bug Fixes
+---------
+
+- Find Diffraction Vectors with the neural detector works on Apple-silicon Macs again: the centre-refine step converted its result to 64-bit floats on the GPU, which Apple's Metal backend does not support, so every batch failed and no peaks appeared. (`#244 <https://github.com/directelectron/spyde/pull/244>`_)
+
+
 0.6.0-rc.2 (2026-10-14)
 =======================
 
