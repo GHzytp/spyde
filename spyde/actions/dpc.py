@@ -453,7 +453,7 @@ def measure_corner_reference(signal, *, method: str = "center_of_mass",
     Measures the beam ONLY inside the four corner blocks — a few percent of
     the scan — and fits :func:`corner_reference` through them, so whatever the
     middle of the scan holds is never read and cannot bias the plane. Same
-    convention as :func:`measure_beam_shifts` (``centre − beam``, pixels).
+    convention as :func:`measure_beam_shifts` (``center − beam``, pixels).
     Shared by the DPC Center tab and Center Zero Beam's corner plane fit.
     """
     navigation_axes = signal.axes_manager.navigation_axes

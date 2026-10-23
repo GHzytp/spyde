@@ -262,7 +262,7 @@ def _run_on_vectors(session, src, tree, signal, vectors, half_width_px: int,
     """Centre a VECTORS tree: the beam is the brightest vector in the search
     box at each position, one plane is fitted through it across the scan (or
     through the four scan corners, given a *corner_fraction*), and every
-    vector moves by centre minus plane — see ``vectors_center``. The result is
+    vector moves by center minus plane — see ``vectors_center``. The result is
     a new vectors tree beside the source, like a Find Vectors run.
 
     ``constant_shift`` (the Manual tab's ``centre − picked``, in the axes'
@@ -493,7 +493,7 @@ def _czb_manual_stop_obj(tree) -> None:
 def _czb_clear_widgets(tree) -> None:
     """Remove every CZB on-plot artefact from *tree* — the Manual crosshair,
     the Automatic search-window widget, the navigator corner boxes, and the
-    found-centre markers. Harmless
+    found-center markers. Harmless
     when absent. Shared by czb_close, the node-switch teardown in
     ``lifecycle.show_tree_node``, and ``BaseSignalTree.close()``."""
     _czb_manual_stop_obj(tree)

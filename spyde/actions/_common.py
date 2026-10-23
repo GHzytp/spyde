@@ -165,9 +165,9 @@ def draw_corner_boxes(plot2d, nav_shape, corner_fraction, existing=None, *,
     """
     from spyde.corners import corner_boxes
     boxes = corner_boxes(nav_shape, float(corner_fraction))
-    # add_rectangles takes CENTRES + sizes; corner_boxes gives (x, y, w, h)
+    # add_rectangles takes CENTERS + sizes; corner_boxes gives (x, y, w, h)
     # where x and y are pixel INDICES. Pixel i covers [i - 0.5, i + 0.5], so a
-    # block over indices 0..1 is centred on 0.5, not on x + w/2 = 1.0. Without
+    # block over indices 0..1 is centered on 0.5, not on x + w/2 = 1.0. Without
     # the half-pixel every box is shifted toward the bottom-right and no longer
     # covers the pixels the plane is fitted through.
     offsets = [[x + w / 2.0 - 0.5, y + h / 2.0 - 0.5] for (x, y, w, h) in boxes]

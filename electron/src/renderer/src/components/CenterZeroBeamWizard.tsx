@@ -1,7 +1,7 @@
 /**
  * CenterZeroBeamWizard.tsx — the Center-Zero-Beam caret (Qt two-tab parity).
  *
- *   Automatic — pick a method (+ optional centred half-width window + a
+ *   Automatic — pick a method (+ optional centered half-width window + a
  *               plane fit, through the whole scan or the four scan corners
  *               only) → "Center" dispatches `czb_run`. The Corners plane fit
  *               shows its four boxes on the navigator, as the DPC caret does. The half-width

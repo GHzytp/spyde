@@ -290,7 +290,7 @@ class TestCenterZeroBeam:
 
 # ── Corners only: the descan plane from the four scan corners ───────────────
 
-#: The scan's descan ramp, as pyxem's ``centre − beam`` shift in pixels:
+#: The scan's descan ramp, as pyxem's ``center − beam`` shift in pixels:
 #: ``(offset, per column, per row)`` for x and for y.
 _DESCAN_X = (1.0, 0.12, -0.08)
 _DESCAN_Y = (-0.5, 0.05, 0.10)
@@ -305,7 +305,7 @@ def _descan_with_sample(nav=24, sig=48, sample=True):
     across the MIDDLE of the scan that the four corners never see.
 
     The sample is a second, weaker spot 12 px to the right of the beam. It
-    drags a whole-pattern centre of mass ~4.5 px off the beam wherever it is
+    drags a whole-pattern center of mass ~4.5 px off the beam wherever it is
     present, so any fit that includes the middle of the scan is biased, while
     the corners (15 % boxes here) are clean vacuum.
     """
@@ -328,7 +328,7 @@ def _descan_with_sample(nav=24, sig=48, sample=True):
 
 
 def _beam_position(frame, around, radius=6):
-    """Centre of mass of *frame* inside a disc of *radius* around *around* —
+    """Center of mass of *frame* inside a disc of *radius* around *around* —
     the beam alone, without the sample spot 12 px away."""
     frame = np.asarray(frame, dtype=np.float64)
     yy, xx = np.mgrid[0:frame.shape[0], 0:frame.shape[1]]
@@ -386,16 +386,16 @@ class TestCornersOnly:
         finally:
             close_session(session)
 
-    def test_corners_put_the_beam_on_the_pattern_centre_everywhere(self):
+    def test_corners_put_the_beam_on_the_pattern_center_everywhere(self):
         frames, names = self._centered("corners")
         assert any("Centered" in name for name in names)
         for key, frame in frames.items():
             position = _beam_position(frame, (24, 24))
             assert np.hypot(position[0] - 24, position[1] - 24) < 0.3, (key, position)
 
-    def test_the_whole_scan_plane_leaves_the_beam_off_centre(self):
+    def test_the_whole_scan_plane_leaves_the_beam_off_center(self):
         """The control on the full path: the sample pulls the whole-scan plane
-        (and so every centred pattern) more than a pixel off."""
+        (and so every centered pattern) more than a pixel off."""
         frames, _names = self._centered("whole_scan")
         worst = max(np.hypot(*(np.subtract(_beam_position(frame, (24, 24)), 24)))
                     for frame in frames.values())

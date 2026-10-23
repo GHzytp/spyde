@@ -1465,7 +1465,7 @@ class BaseSignalTree:
                 setattr(self, wiz_attr, None)
         # On-plot interactive widgets (the Crop box, the CZB search box and
         # Manual crosshair: widgets have no remove(), only hide()) and the CZB
-        # found-centre and corner-box marker groups (real remove()). All
+        # found-center and corner-box marker groups (real remove()). All
         # harmless when absent.
         for attr in ("_crop_widget", "_czb_region_mg", "_czb_cross"):
             wdg = getattr(self, attr, None)
