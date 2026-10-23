@@ -94,6 +94,7 @@ import time
 
 import numpy as np
 
+from spyde.actions._common import draw_corner_boxes, navigator_plot2d
 from spyde.actions import dpc as _dpc
 from spyde.actions import dpc_display as _display
 from spyde.actions.context import current_signal as _current_signal
@@ -533,7 +534,7 @@ class DpcWizard(WizardController):
         if self.shifts is not None:
             return field                 # a supersede: go dark and refill
         try:
-            corners = self._measure_corners(signal, (ny, nx), method, hw, region)
+            corners = self._measure_corners(signal, method, hw, region)
         except Exception as e:
             log.debug("the DPC corner seed failed: %s", e)
             return field
@@ -541,22 +542,16 @@ class DpcWizard(WizardController):
             field[:] = corners
         return field
 
-    def _measure_corners(self, signal, nav_shape, method, hw, region):
+    def _measure_corners(self, signal, method, hw, region):
         """A whole-field plane fitted through the four scan corners only.
 
         The corners carry the instrument descan and (by assumption) none of the
         sample's field, which is what makes them both cheap to measure and worth
         showing on their own.
         """
-        fraction = float(self.params["corner_fraction"])
-        sparse = np.full((int(nav_shape[0]), int(nav_shape[1]), 2), np.nan,
-                         dtype=np.float64)
-        for rows, cols in _dpc.corner_slices(nav_shape, fraction):
-            block = _dpc.measure_beam_shifts(signal.inav[cols, rows],
-                                             method=method,
-                                             half_square_width=hw, region=region)
-            sparse[rows, cols] = block
-        return _dpc.corner_reference(sparse, fraction)
+        return _dpc.measure_corner_reference(
+            signal, method=method, half_square_width=hw, region=region,
+            corner_fraction=float(self.params["corner_fraction"]))
 
     def _dispatch(self, fn) -> None:
         """Run *fn* on the event loop — figures and IPC belong there."""
@@ -886,62 +881,21 @@ class DpcWizard(WizardController):
 
     # ── overlays on the SOURCE windows ───────────────────────────────────────
 
-    def _navigator_plot2d(self):
-        """The source tree's navigator plot — where the corner boxes go.
-
-        The corner boxes select SCAN positions, so they belong on the navigator,
-        not on the diffraction pattern. A tree with no navigator (a single 2-D
-        image) simply gets no boxes.
-        """
-        tree = self.tree
-        npm = getattr(tree, "navigator_plot_manager", None) if tree else None
-        if npm is None:
-            return None
-        pw = next(iter(getattr(npm, "plot_windows", {}) or {}), None)
-        if pw is None:
-            return None
-        plots = npm.plots.get(pw) or []
-        return getattr(plots[0], "_plot2d", None) if plots else None
-
     def show_corner_boxes(self) -> None:
-        """Draw (or resize) the four corner boxes the plane is fitted through.
+        """Draw (or resize) the four corner boxes the plane is fitted through,
+        on the source navigator.
 
         Static markers, not draggable widgets: their geometry IS
         ``corner_fraction``, so the slider is the only sensible way to change
-        them and a drag would have nowhere to write back to. Geometry comes
-        from :func:`dpc.corner_boxes`, the same source the fit mask does, so
-        what is drawn is exactly what is fitted.
+        them and a drag would have nowhere to write back to.
         """
-        plot2d = self._navigator_plot2d()
+        plot2d = navigator_plot2d(self.tree)
         if plot2d is None:
             return
-        boxes = _dpc.corner_boxes(self._nav_shape(),
-                                  float(self.params["corner_fraction"]))
-        # add_rectangles takes CENTRES + sizes; corner_boxes gives (x, y, w, h)
-        # where x and y are pixel INDICES. Pixel i covers [i - 0.5, i + 0.5], so
-        # a block over indices 0..1 spans [-0.5, 1.5] and is centred on 0.5 —
-        # not on x + w/2, which is 1.0. Without the half-pixel every box sits
-        # shifted toward the bottom-right: a gap inside the top-left corner, an
-        # overhang past the bottom-right edge, and the drawn box no longer
-        # covers the pixels the plane is actually fitted through.
-        offsets = [[x + w / 2.0 - 0.5, y + h / 2.0 - 0.5]
-                   for (x, y, w, h) in boxes]
-        widths = [w for (_x, _y, w, _h) in boxes]
-        heights = [h for (_x, _y, _w, h) in boxes]
-        if self._corner_mg is not None:
-            try:
-                self._corner_mg.set(offsets=offsets, widths=widths,
-                                    heights=heights)
-                return
-            except Exception as e:                           # pragma: no cover
-                log.debug("resizing the DPC corner boxes failed: %s", e)
-        try:
-            self._corner_mg = plot2d.add_rectangles(
-                offsets, widths, heights, name="dpc_corners",
-                edgecolors=_CORNER_COLOR, facecolors=_CORNER_COLOR,
-                linewidths=_CORNER_LINEWIDTH, alpha=0.22)
-        except Exception as e:                               # pragma: no cover
-            log.debug("drawing the DPC corner boxes failed: %s", e)
+        self._corner_mg = draw_corner_boxes(
+            plot2d, self._nav_shape(), float(self.params["corner_fraction"]),
+            self._corner_mg, name="dpc_corners", color=_CORNER_COLOR,
+            linewidth=_CORNER_LINEWIDTH)
 
     def hide_corner_boxes(self) -> None:
         if self._corner_mg is not None:

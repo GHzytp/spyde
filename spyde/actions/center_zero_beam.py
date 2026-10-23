@@ -4,8 +4,11 @@ center_zero_beam.py — Electron-native Center Zero Beam (two-tab parity).
 Mirrors the Qt action (``pyxem.center_zero_beam`` / ``..._setup``):
 
   Automatic — pyxem ``get_direct_beam_position(method, half_square_width)`` →
-              optional linear-plane flat field → ``center_direct_beam`` → a
-              "Centered" child node (the current DP updates in place).
+              optional plane fit → ``center_direct_beam`` → a "Centered"
+              child node (the current DP updates in place). The plane is
+              fitted through the whole scan, or through the four scan corners
+              only (the DPC Center tab's Corners reference, same code), for a
+              scan whose middle holds a sample that would bias it.
   Manual    — drop a draggable crosshair on the DP at the zero beam, Apply a
               CONSTANT shift (``centre − picked``) → "Centered (Manual)" node.
 
@@ -21,10 +24,17 @@ import numpy as np
 
 from de_shell.ipc import emit, emit_status, emit_error
 from spyde.actions.context import src_plot_tree as _src_plot_tree, current_signal as _current_signal
+from spyde.corners import DEFAULT_CORNER_FRACTION
 
 log = logging.getLogger(__name__)
 
-DEFAULTS = dict(method="center_of_mass", half_square_width=0, make_flat_field=False)
+#: How the per-pattern beam positions become the applied shifts: kept as
+#: measured, replaced by a plane through every scan position, or replaced by
+#: a plane through the four scan corners alone.
+PLANE_FITS: tuple[str, ...] = ("none", "whole_scan", "corners")
+
+DEFAULTS = dict(method="center_of_mass", half_square_width=0, plane_fit="none",
+                corner_fraction=DEFAULT_CORNER_FRACTION)
 
 # Declared parameter schema (single source of truth for every host — the
 # Electron CenterZeroBeamWizard.tsx caret mirrors the Automatic tab; the
@@ -44,9 +54,14 @@ PARAMETERS = {
         "default": DEFAULTS["half_square_width"], "min": 0, "max": 256,
         "tab": "Automatic",
     },
-    "make_flat_field": {
-        "name": "Plane-fit shifts", "type": "bool",
-        "default": DEFAULTS["make_flat_field"], "tab": "Automatic",
+    "plane_fit": {
+        "name": "Plane fit", "type": "enum", "default": DEFAULTS["plane_fit"],
+        "choices": list(PLANE_FITS), "tab": "Automatic",
+    },
+    "corner_fraction": {
+        "name": "Corner box size", "type": "float",
+        "default": DEFAULTS["corner_fraction"], "min": 0.01, "max": 0.45,
+        "step": 0.01, "tab": "Automatic",
     },
 }
 _CROSS_COLOR = "#ffcc00"
@@ -68,6 +83,46 @@ def _czb_remove_region(tree) -> None:
             log.debug("hiding czb region widget failed: %s", e)
         tree._czb_region_mg = None
         tree._czb_region_handler = None
+
+
+def _plane_fit(payload) -> str:
+    """The payload's plane fit. ``make_flat_field: True`` is the older name
+    for a whole-scan plane, still sent by scripts written before corners."""
+    plane_fit = payload.get("plane_fit")
+    if plane_fit is None:
+        return "whole_scan" if payload.get("make_flat_field") else "none"
+    if plane_fit not in PLANE_FITS:
+        raise ValueError(f"plane_fit must be one of {PLANE_FITS}, got {plane_fit!r}")
+    return str(plane_fit)
+
+
+def _czb_remove_corners(tree) -> None:
+    boxes = getattr(tree, "_czb_corner_mg", None) if tree is not None else None
+    if boxes is not None:
+        try:
+            boxes.remove()
+        except Exception as e:
+            log.debug("removing czb corner boxes failed: %s", e)
+        tree._czb_corner_mg = None
+
+
+def _czb_show_corners(tree, signal, payload) -> None:
+    """Show the four corner boxes on the navigator while the plane fit is
+    ``corners`` (resized in place as the box size changes), and remove them
+    otherwise — the same boxes the DPC Center tab draws."""
+    if (payload.get("plane_fit") != "corners"
+            or signal.axes_manager.navigation_dimension != 2):
+        _czb_remove_corners(tree)
+        return
+    from spyde.actions._common import draw_corner_boxes, navigator_plot2d
+    plot2d = navigator_plot2d(tree)
+    if plot2d is None:
+        return
+    nav_shape = tuple(int(n) for n in signal.axes_manager.navigation_shape)[::-1]
+    fraction = float(payload.get("corner_fraction", DEFAULTS["corner_fraction"]))
+    tree._czb_corner_mg = draw_corner_boxes(
+        plot2d, nav_shape, fraction, getattr(tree, "_czb_corner_mg", None),
+        name="czb_corners", color=_REGION_COLOR)
 
 
 def _czb_remove_found(tree) -> None:
@@ -143,6 +198,7 @@ def czb_set_region(session, plot, payload) -> None:
     plot2d = getattr(src, "_plot2d", None) if src is not None else None
     if plot2d is None or signal is None or tree is None:
         return
+    _czb_show_corners(tree, signal, payload)
     sig_ax = signal.axes_manager.signal_axes
     w, h = int(sig_ax[0].size), int(sig_ax[1].size)
     hw = int(payload.get("half_square_width", 0) or 0)
@@ -201,11 +257,13 @@ def _czb_show_found(src, tree, signal, beam_xy) -> None:
 
 
 def _run_on_vectors(session, src, tree, signal, vectors, half_width_px: int,
-                    *, plane: bool, constant_shift=None) -> None:
+                    *, plane: bool, corner_fraction=None,
+                    constant_shift=None) -> None:
     """Centre a VECTORS tree: the beam is the brightest vector in the search
-    box at each position, one plane is fitted through it across the scan, and
-    every vector moves by centre minus plane — see ``vectors_center``. The
-    result is a new vectors tree beside the source, like a Find Vectors run.
+    box at each position, one plane is fitted through it across the scan (or
+    through the four scan corners, given a *corner_fraction*), and every
+    vector moves by centre minus plane — see ``vectors_center``. The result is
+    a new vectors tree beside the source, like a Find Vectors run.
 
     ``constant_shift`` (the Manual tab's ``centre − picked``, in the axes'
     units) skips the search and moves every vector by it.
@@ -232,7 +290,9 @@ def _run_on_vectors(session, src, tree, signal, vectors, half_width_px: int,
                 centred = shifted_vectors(vectors, shift)
                 found = None
             else:
-                centred, shift, beam = center_vectors(vectors, centre, half, plane=plane)
+                centred, shift, beam = center_vectors(
+                    vectors, centre, half, plane=plane,
+                    corner_fraction=corner_fraction)
                 found = int(np.isfinite(beam[..., 0]).sum())
                 if found == 0:
                     emit_error("Center Zero Beam: no vector inside the box at "
@@ -248,6 +308,7 @@ def _run_on_vectors(session, src, tree, signal, vectors, half_width_px: int,
                     new_tree.root.metadata.set_item(
                         "Spyde.provenance.params",
                         {"half_width_px": int(half_width_px), "plane": bool(plane),
+                         "corner_fraction": corner_fraction,
                          "mean_shift": [float(v) for v in np.nanmean(shift, axis=(0, 1))]})
                 except Exception as e:
                     log.debug("stamping the vectors centring params failed: %s", e)
@@ -264,6 +325,18 @@ def _run_on_vectors(session, src, tree, signal, vectors, half_width_px: int,
 
     from spyde.actions.lifecycle import run_on_worker
     run_on_worker(session, _work, name="czb-vectors")
+
+
+def _shift_signal(signal, shifts: np.ndarray):
+    """``(*nav, 2)`` shifts as the signal ``center_direct_beam`` takes, on
+    *signal*'s navigation axes."""
+    import hyperspy.api as hs
+    out = hs.signals.Signal1D(np.asarray(shifts, dtype=np.float32))
+    for source_axis, axis in zip(signal.axes_manager.navigation_axes,
+                                 out.axes_manager.navigation_axes):
+        axis.scale, axis.offset = source_axis.scale, source_axis.offset
+        axis.units, axis.name = source_axis.units, source_axis.name
+    return out
 
 
 def _display(src, tree, new_signal) -> None:
@@ -301,10 +374,20 @@ def czb_run(session, plot, payload) -> None:
     live_hw = _czb_region_from_widget(tree, w, h)
     if live_hw is not None:
         hw = live_hw
-    flat = bool(payload.get("make_flat_field", False))
+    try:
+        plane_fit = _plane_fit(payload)
+    except ValueError as e:
+        emit_error(f"Center Zero Beam: {e}")
+        return
+    corner_fraction = float(payload.get("corner_fraction", DEFAULTS["corner_fraction"]))
+    if plane_fit == "corners" and signal.axes_manager.navigation_dimension != 2:
+        emit_error("Center Zero Beam: fitting the corners needs a 2-D scan")
+        return
     vectors = getattr(tree, "diffraction_vectors", None)
     if vectors is not None:
-        _run_on_vectors(session, src, tree, signal, vectors, hw, plane=flat)
+        _run_on_vectors(
+            session, src, tree, signal, vectors, hw, plane=plane_fit != "none",
+            corner_fraction=corner_fraction if plane_fit == "corners" else None)
         return
     emit_status("Centering zero beam…")
 
@@ -320,13 +403,21 @@ def czb_run(session, plot, payload) -> None:
                 signal.set_signal_type("electron_diffraction")
             except Exception as e:
                 log.debug("set_signal_type(electron_diffraction) failed: %s", e)
-            kw = {"method": method, "lazy_output": False}
-            if hw > 0:
-                kw["half_square_width"] = hw
-            shifts = signal.get_direct_beam_position(**kw)
-            if getattr(shifts, "_lazy", False):
-                shifts.compute()
-            if flat:
+            if plane_fit == "corners":
+                # Only the corner patterns are read: the middle of the scan is
+                # what would bias the plane, so it is never measured at all.
+                from spyde.actions.dpc import measure_corner_reference
+                shifts = _shift_signal(signal, measure_corner_reference(
+                    signal, method=method, half_square_width=hw,
+                    corner_fraction=corner_fraction))
+            else:
+                kw = {"method": method, "lazy_output": False}
+                if hw > 0:
+                    kw["half_square_width"] = hw
+                shifts = signal.get_direct_beam_position(**kw)
+                if getattr(shifts, "_lazy", False):
+                    shifts.compute()
+            if plane_fit == "whole_scan":
                 try:
                     lp = shifts.get_linear_plane()
                     if lp is not None:
@@ -336,9 +427,9 @@ def czb_run(session, plot, payload) -> None:
             new = tree.add_transformation(
                 parent_signal=signal, method="center_direct_beam",
                 node_name="Centered", shifts=shifts, inplace=False,
-                # Per-pattern shift estimates are local; flat-field mode fits one
-                # plane across ALL shifts first, so that specific run is opaque.
-                local=(not flat),
+                # Per-pattern shift estimates are local; a plane fit uses
+                # positions far from each frame, so that run is opaque.
+                local=(plane_fit == "none"),
             )
             if new is None:
                 emit_error("Center Zero Beam: centering failed")
@@ -401,12 +492,14 @@ def _czb_manual_stop_obj(tree) -> None:
 
 def _czb_clear_widgets(tree) -> None:
     """Remove every CZB on-plot artefact from *tree* — the Manual crosshair,
-    the Automatic search-window widget, and the found-centre markers. Harmless
+    the Automatic search-window widget, the navigator corner boxes, and the
+    found-centre markers. Harmless
     when absent. Shared by czb_close, the node-switch teardown in
     ``lifecycle.show_tree_node``, and ``BaseSignalTree.close()``."""
     _czb_manual_stop_obj(tree)
     _czb_remove_region(tree)
     _czb_remove_found(tree)
+    _czb_remove_corners(tree)
 
 
 def czb_close(session, plot, payload=None) -> None:
@@ -454,7 +547,6 @@ def czb_pick(session, plot, payload) -> None:
         if handle.stopped:
             return
         try:
-            import hyperspy.api as hs
             try:
                 signal.set_signal_type("electron_diffraction")
             except Exception as e:
@@ -469,11 +561,7 @@ def czb_pick(session, plot, payload) -> None:
             data = np.zeros(nav_shape + (2,), dtype=np.float32)
             data[..., 0] = sx
             data[..., 1] = sy
-            shifts = hs.signals.Signal1D(data)
-            for i, ax in enumerate(am.navigation_axes):
-                oax = shifts.axes_manager.navigation_axes[i]
-                oax.scale, oax.offset = ax.scale, ax.offset
-                oax.units, oax.name = ax.units, ax.name
+            shifts = _shift_signal(signal, data)
             new = tree.add_transformation(
                 parent_signal=signal, method="center_direct_beam",
                 node_name="Centered (Manual)", shifts=shifts, inplace=False,

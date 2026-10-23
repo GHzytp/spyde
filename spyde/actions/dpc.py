@@ -443,6 +443,29 @@ def measure_beam_shifts(signal, *, method: str = "center_of_mass",
     return np.asarray(shifts.data, dtype=np.float64)
 
 
+def measure_corner_reference(signal, *, method: str = "center_of_mass",
+                             half_square_width: int = 0,
+                             region: "BeamRegion | None" = None,
+                             corner_fraction: float = DEFAULT_CORNER_FRACTION
+                             ) -> np.ndarray:
+    """The descan plane from the four scan corners → ``(ny, nx, 2)`` float64.
+
+    Measures the beam ONLY inside the four corner blocks — a few percent of
+    the scan — and fits :func:`corner_reference` through them, so whatever the
+    middle of the scan holds is never read and cannot bias the plane. Same
+    convention as :func:`measure_beam_shifts` (``centre − beam``, pixels).
+    Shared by the DPC Center tab and Center Zero Beam's corner plane fit.
+    """
+    navigation_axes = signal.axes_manager.navigation_axes
+    nav_shape = (int(navigation_axes[1].size), int(navigation_axes[0].size))
+    sparse = np.full(nav_shape + (2,), np.nan, dtype=np.float64)
+    for rows, columns in corner_slices(nav_shape, corner_fraction):
+        sparse[rows, columns] = measure_beam_shifts(
+            signal.inav[columns, rows], method=method,
+            half_square_width=half_square_width, region=region)
+    return corner_reference(sparse, corner_fraction)
+
+
 def region_brightness(signal, region: "BeamRegion | None", *, index=(0, 0)
                       ) -> float:
     """How many times brighter *region* is than the frame average — the live

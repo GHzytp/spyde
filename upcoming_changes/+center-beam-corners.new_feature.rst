@@ -1,0 +1,1 @@
+Center Zero Beam can now fit the descan plane through the four corners of the scan only, the same corner boxes the DPC Center tab uses, so a sample in the middle of the scan no longer pulls the centering off.

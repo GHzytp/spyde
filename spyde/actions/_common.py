@@ -8,7 +8,11 @@ without pulling heavy deps.
 """
 from __future__ import annotations
 
+import logging
+
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 # ── Strain component constants (shared by strain_action + strain_display) ──────
 # Canonical order of strain-tensor components and their display titles.
@@ -130,3 +134,55 @@ def widget_region(selector, img: np.ndarray) -> np.ndarray:
     else:
         region = img
     return region
+
+
+# ── The four scan-corner boxes on a navigator (DPC + Center Zero Beam) ─────────
+
+def navigator_plot2d(tree):
+    """The 2-D figure of *tree*'s navigator, or ``None`` when it has none.
+
+    Overlays that select SCAN positions belong there rather than on the
+    diffraction pattern; a tree with no navigator simply gets none.
+    """
+    manager = getattr(tree, "navigator_plot_manager", None) if tree else None
+    if manager is None:
+        return None
+    window = next(iter(getattr(manager, "plot_windows", {}) or {}), None)
+    if window is None:
+        return None
+    plots = manager.plots.get(window) or []
+    return getattr(plots[0], "_plot2d", None) if plots else None
+
+
+def draw_corner_boxes(plot2d, nav_shape, corner_fraction, existing=None, *,
+                      name: str, color: str, linewidth: float = 3.0):
+    """Draw (or resize *existing*) the four corner boxes a plane is fitted to.
+
+    Geometry comes from :func:`spyde.corners.corner_boxes`, the same source
+    the fit mask does, so what is drawn is exactly what is fitted. Returns the
+    marker group to pass back as *existing* next time, or ``None`` if it could
+    not be drawn.
+    """
+    from spyde.corners import corner_boxes
+    boxes = corner_boxes(nav_shape, float(corner_fraction))
+    # add_rectangles takes CENTRES + sizes; corner_boxes gives (x, y, w, h)
+    # where x and y are pixel INDICES. Pixel i covers [i - 0.5, i + 0.5], so a
+    # block over indices 0..1 is centred on 0.5, not on x + w/2 = 1.0. Without
+    # the half-pixel every box is shifted toward the bottom-right and no longer
+    # covers the pixels the plane is fitted through.
+    offsets = [[x + w / 2.0 - 0.5, y + h / 2.0 - 0.5] for (x, y, w, h) in boxes]
+    widths = [w for (_x, _y, w, _h) in boxes]
+    heights = [h for (_x, _y, _w, h) in boxes]
+    if existing is not None:
+        try:
+            existing.set(offsets=offsets, widths=widths, heights=heights)
+            return existing
+        except Exception as e:                               # pragma: no cover
+            log.debug("resizing the %s corner boxes failed: %s", name, e)
+    try:
+        return plot2d.add_rectangles(
+            offsets, widths, heights, name=name, edgecolors=color,
+            facecolors=color, linewidths=linewidth, alpha=0.22)
+    except Exception as e:                                   # pragma: no cover
+        log.debug("drawing the %s corner boxes failed: %s", name, e)
+        return None
