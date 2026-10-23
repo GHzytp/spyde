@@ -1016,7 +1016,7 @@ def affordable_zone_step(crystal, angle_step_zone_axis_deg: float,
                 f"reciprocal radius or free some memory.")
         # Memory goes as the fourth power of the step, so 10 % per try trims
         # about a third and lands close to the finest step that fits.
-        step = min(COARSEST_ZONE_STEP_DEG, round(step * 1.1, 2))
+        step = min(COARSEST_ZONE_STEP_DEG, max(step + 0.01, round(step * 1.1, 2)))
     return step
 
 
