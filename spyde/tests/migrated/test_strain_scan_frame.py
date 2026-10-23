@@ -325,3 +325,53 @@ class TestDpcSourcePicker:
         finally:
             session.signal_trees.remove(tree)
             session._window_controllers.pop(999, None)
+
+
+class TestAxesGlyphBeforeTheFirstFrame:
+    """The reference pattern is a NEW plot: the glyph is attached right after
+    the reference crosshair queues that plot's first frame, and nothing makes
+    the frame land first. A glyph sized from whatever the figure holds at that
+    moment (an empty placeholder) sat as a speck in the pattern's corner, and
+    every drag re-pinned it there."""
+
+    def test_the_glyph_is_centred_on_the_pattern_even_before_it_paints(
+            self, stem_4d_dataset, monkeypatch):
+        from spyde.actions.strain_action import StrainController
+        from spyde.actions.strain_axes_glyph import LENGTH_FRACTION
+        from spyde.drawing.plots.plot import Plot
+        import threading
+
+        # Hold every navigator paint until the glyph is built — the slow first
+        # read of a real lazy scan, made deterministic.
+        first_frame = threading.Event()
+        real_enqueue_paint = Plot.enqueue_paint
+
+        def held_enqueue_paint(plot, data):
+            first_frame.wait(timeout=10.0)
+            real_enqueue_paint(plot, data)
+
+        monkeypatch.setattr(Plot, "enqueue_paint", held_enqueue_paint)
+        session = stem_4d_dataset["window"]
+        tree = session.signal_trees[0]
+        height, width = tree.root.data.shape[-2:]
+        import anyplotlib as apl
+        _fig, ax = apl.subplots()
+        ctrl = StrainController(None, ax.imshow(np.zeros((3, 4), "f4")),
+                                window_id=4646, ref_yx=(0, 0), session=session,
+                                src_tree=tree)
+        try:
+            ctrl._attach_reference_selector()
+            ctrl._attach_axes_glyph()
+            glyph = ctrl.axes_glyph
+            assert glyph is not None
+            centre = (width / 2.0, height / 2.0)
+            assert (glyph.x_arrow.x, glyph.x_arrow.y) == centre
+            assert glyph.x_arrow.u == pytest.approx(LENGTH_FRACTION * min(width, height))
+
+            # A drag re-pins the tail to the centre, not to the placeholder's.
+            glyph.x_arrow.set(_notify=False, u=0.0, v=-20.0)
+            glyph._on_x_drag()
+            assert (glyph.x_arrow.x, glyph.x_arrow.y) == centre
+        finally:
+            first_frame.set()
+            ctrl.remove()
