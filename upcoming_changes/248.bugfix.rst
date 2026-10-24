@@ -1,0 +1,1 @@
+The strain window's rotation arrows on the reference pattern no longer sometimes sit as a speck in the pattern's corner; they are centred on the pattern from the moment the window opens.

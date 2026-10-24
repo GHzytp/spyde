@@ -57,6 +57,23 @@ def rotation_from_direction(u: float, v: float, *, axis: str, flip: bool) -> flo
     return math.degrees(theta)
 
 
+def pattern_size(dp_plot) -> tuple[float, float]:
+    """The pattern's ``(width, height)`` in image pixels.
+
+    Read from the signal the plot shows rather than from its figure: the
+    reference pattern is a new plot whose first frame is still being read when
+    the glyph is built, and until it lands the figure holds a 10 x 10
+    placeholder — sizing from that pinned the glyph to a speck in the corner.
+    """
+    try:
+        x_axis, y_axis = dp_plot.plot_state.current_signal.axes_manager.signal_axes
+        return float(x_axis.size), float(y_axis.size)
+    except (AttributeError, ValueError):
+        state = dp_plot._plot2d._state
+        return (float(state.get("image_width") or 1),
+                float(state.get("image_height") or 1))
+
+
 class ScanAxesGlyph:
     """Two draggable arrows (and their labels) on a diffraction-pattern plot.
 
@@ -73,9 +90,8 @@ class ScanAxesGlyph:
         self.rotation = float(rotation)
         self.flip = bool(flip)
         self.on_change = on_change
-        state = plot2d._state
-        width = float(state.get("image_width") or 1)
-        height = float(state.get("image_height") or 1)
+        width, height = pattern_size(dp_plot)
+        self.size = (width, height)
         self.origin = (width / 2.0, height / 2.0)
         self.length = LENGTH_FRACTION * min(width, height)
 
@@ -109,9 +125,7 @@ class ScanAxesGlyph:
     def _label_offsets(self) -> list:
         """Where the letters go, as axes fractions (x right, y UP — the
         markers' "axes" transform), a little past each arrow head."""
-        state = self.plot2d._state
-        width = float(state.get("image_width") or 1)
-        height = float(state.get("image_height") or 1)
+        width, height = self.size
         ox, oy = self.origin
         out = []
         for (u, v) in self._vectors():
