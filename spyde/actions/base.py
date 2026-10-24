@@ -179,9 +179,14 @@ def select_signal_node(toolbar: "ActionContext", signal_id: int = None, *args, *
 # ── Rebin ────────────────────────────────────────────────────────────────────
 
 class Rebin2DAction(TransformAction):
-    """Rebin the 2-D signal by (scale_x, scale_y) — a TransformAction: the
-    template resolves the params, runs hyperspy ``rebin`` and adds the
-    "Binned" node (+ PlotState) to the SAME tree automatically."""
+    """Rebin the scan by (scan_x, scan_y) and the diffraction pattern by
+    (scale_x, scale_y) — a TransformAction: the template resolves the params,
+    runs hyperspy ``rebin`` and adds the "Binned" node (+ PlotState) to the
+    SAME tree automatically.
+
+    The parameters are declared scan first, as a 4-D dataset is described;
+    the toolbar YAML lists them in the same order, which is the order the
+    caret shows them in."""
 
     name = "Rebin"
     method = "rebin"
@@ -192,10 +197,10 @@ class Rebin2DAction(TransformAction):
     # left off that promise.
     is_local_per_frame = True
     parameters = {
-        "scale_x": {"default": 2},
-        "scale_y": {"default": 2},
         "scan_x": {"default": 1},
         "scan_y": {"default": 1},
+        "scale_x": {"default": 2},
+        "scale_y": {"default": 2},
     }
 
     def build_kwargs(self, signal, scale_x=2, scale_y=2, scan_x=1, scan_y=1,

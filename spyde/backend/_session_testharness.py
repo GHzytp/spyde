@@ -1057,6 +1057,13 @@ class TestHarnessMixin:
             n_changed = sum(1 for r in results if r.get("changed"))
             ipc.emit({"type": "nav_drag_result", "total": len(targets),
                   "changed": n_changed, "results": results})
+            # The emitted result never reaches a Playwright process (the main
+            # process consumes it), so a spec that needs WHICH frame painted
+            # reads it from this line. Logged before the verdict, which is
+            # the line specs wait on.
+            log.info("[REDRAW] test_nav_drag frames: %s",
+                     [[r["x"], r["y"], (r.get("sig") or [None])[0]]
+                      for r in results])
             log.info("[REDRAW] test_nav_drag: %d/%d moves changed the DP",
                      n_changed, len(targets))
         except Exception as e:

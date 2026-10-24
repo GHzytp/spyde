@@ -19,7 +19,8 @@ from spyde.array_cache import reader_for_overlay
 log = logging.getLogger(__name__)
 
 
-def refresh_overlays(plot, indices, integrating: bool = False) -> None:
+def refresh_overlays(plot, indices, integrating: bool = False,
+                     selector=None) -> None:
     """Evaluate and draw every visible overlay child of the node ``plot``
     displays, at the selector position ``indices``.
 
@@ -28,6 +29,9 @@ def refresh_overlays(plot, indices, integrating: bool = False) -> None:
     re-fire is not special: it is one more evaluation. ``integrating`` is the
     selector's own mode, which a node declaring ``follows_region`` reads with
     so its source integrates the same positions the base frame does.
+    ``selector``, when given, is the one that picked ``indices``; its
+    position is translated to the displayed node's grid as the base frame's
+    is (see ``navigator_to_node_grid``).
     """
     signal = getattr(plot.plot_state, "current_signal", None)
     tree = plot.signal_tree
@@ -37,7 +41,11 @@ def refresh_overlays(plot, indices, integrating: bool = False) -> None:
     if not children:
         return
 
-    from spyde.drawing.update_functions import _prepare_nav_indices
+    from spyde.drawing.update_functions import (
+        _prepare_nav_indices, navigator_to_node_grid)
+
+    if selector is not None:
+        indices = navigator_to_node_grid(selector, tree, signal, indices)
 
     # Overlays follow one position: the crosshair, or the centre of a region.
     prepared = _prepare_nav_indices(signal, indices, integrating=False)

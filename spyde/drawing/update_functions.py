@@ -1050,6 +1050,88 @@ def _selects_several_positions(indices) -> bool:
     return idx.ndim > 1 and idx.shape[0] > 1
 
 
+def _column_axes(signal) -> list:
+    """``signal``'s navigation axes in the column order of a selector index.
+
+    That order is data order with the innermost spatial pair in widget (x, y)
+    order — the inverse of the swap :func:`_prepare_nav_indices` makes."""
+    axes = list(signal.axes_manager.navigation_axes)[::-1]
+    if signal.axes_manager.signal_dimension == 2 and len(axes) >= 2:
+        axes[-2], axes[-1] = axes[-1], axes[-2]
+    return axes
+
+
+def _navigator_column_sizes(selector) -> list[int]:
+    """The size of the navigator image each column of ``selector``'s index
+    was picked on — upstream selectors first, as the index composes them."""
+    selectors = ([*selector.upstream_selectors(), selector]
+                 if selector.multi_selector else [selector])
+    sizes = []
+    for each in selectors:
+        signal = each.current_plot.plot_state.current_signal
+        sizes.extend(int(axis.size) for axis in signal.axes_manager.signal_axes)
+    return sizes
+
+
+def navigator_to_node_grid(selector, tree, current_signal, indices):
+    """Translate a navigator position into a position of ``current_signal``.
+
+    The navigator shows the tree ROOT's scan, and nothing rebuilds it when the
+    displayed node changes, so its selector picks positions on the root's
+    grid. A node that binned or cropped the scan has a different grid: binned
+    by 2, scan column 6 is node column 3, and reading node column 6 shows the
+    pattern from scan columns 12 and 13. Each such column goes through the
+    axes' calibration — hyperspy keeps it consistent across ``rebin`` and
+    ``inav`` — so both a bin and a crop land on the position under the
+    crosshair.
+
+    A column is left alone when the navigator it was picked on already has the
+    node's size (the grids agree, or the navigator was made from the node), or
+    has neither the node's nor the root's size (nothing to translate from).
+    A region that lands on the same node position more than once keeps it
+    once, so the integrated frame stays the mean of the positions it covers.
+    """
+    root = getattr(tree, "root", None)
+    indices = np.asarray(indices)
+    if root is None or current_signal is root or indices.ndim != 2:
+        return indices
+    try:
+        node_axes = _column_axes(current_signal)
+        root_axes = _column_axes(root)
+        sizes = _navigator_column_sizes(selector)
+    except Exception as e:
+        log.debug("navigator grid of %s unavailable: %s", selector, e)
+        return indices
+    count, columns = len(node_axes), indices.shape[1]
+    if (count == 0 or columns < count or len(root_axes) < count
+            or len(sizes) != columns):
+        return indices
+
+    translated = indices.copy()
+    changed = False
+    # Columns align from the END, as _prepare_nav_indices trims them.
+    for column, node_axis, root_axis in zip(
+            range(columns - count, columns), node_axes, root_axes[-count:]):
+        size = sizes[column]
+        if size == node_axis.size or size != root_axis.size:
+            continue
+        if not (getattr(node_axis, "is_uniform", False)
+                and getattr(root_axis, "is_uniform", False)
+                and node_axis.scale):
+            continue
+        values = root_axis.offset + indices[:, column] * root_axis.scale
+        translated[:, column] = np.clip(
+            np.rint((values - node_axis.offset) / node_axis.scale),
+            0, node_axis.size - 1)
+        changed = True
+    if not changed:
+        return indices
+    if translated.shape[0] > 1:
+        _, first = np.unique(translated, axis=0, return_index=True)
+        translated = translated[np.sort(first)]
+    return translated
+
+
 def _prepare_nav_indices(current_signal, indices, integrating: bool, data=None):
     """Transform RAW selector indices into DATA-ORDER, clamped array indices — the
     shared index-prep for the navigator read.
@@ -1229,6 +1311,8 @@ def update_from_navigation_selection(
     # get the data from the signal tree based on the current indices
 
     current_signal = child.plot_state.current_signal
+    tree = getattr(child, "signal_tree", None)
+    indices = navigator_to_node_grid(selector, tree, current_signal, indices)
 
     # The selector's own mode is not the whole answer: an integrating span on an
     # OUTER navigator, or a point selector with a width, hands a crosshair an
@@ -1243,8 +1327,7 @@ def update_from_navigation_selection(
     # guard below: those guards ask whether `.data` can be sliced, and a
     # placeholder or an unresolved future there is exactly the case an
     # override exists to serve.
-    tree = getattr(child, "signal_tree", None)
-    override = (tree.reader_override_for(current_signal, child)
+    override =(tree.reader_override_for(current_signal, child)
                 if tree is not None else None)
     if override is not None:
         # Clamp against the navigation axes, not `.data`: the override reads
