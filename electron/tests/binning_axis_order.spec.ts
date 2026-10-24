@@ -35,12 +35,17 @@ test.afterAll(async () => { await ctx?.app?.close() })
 const shot = (name: string) => page.screenshot({ path: join(SHOTS, name) })
 
 /** Move the navigator crosshair to scan (x, y) and return the flat argmax of
- *  the pattern that painted, from the backend's report of the move. */
+ *  the pattern that painted, from the backend's report of the move.
+ *
+ *  The target is sent twice and the second report is the one read. Setting
+ *  the widget's x and then its y fires one update per coordinate, so the
+ *  first report can be the frame at (x, previous y); the second move changes
+ *  nothing and reports the frame that settled. */
 async function moveCrosshair(x: number, y: number): Promise<number | null> {
   const reports = () => ctx.backend.logBuffer
     .filter((l: string) => l.includes('test_nav_drag frames:'))
   const before = reports().length
-  await backendAction(page, 'test_nav_drag', { targets: [[x, y]] })
+  await backendAction(page, 'test_nav_drag', { targets: [[x, y], [x, y]] })
   let line: string | undefined
   for (let i = 0; i < 120 && !line; i++) {
     const lines = reports()
@@ -49,7 +54,7 @@ async function moveCrosshair(x: number, y: number): Promise<number | null> {
   }
   expect(line, 'the backend never reported the crosshair move').toBeTruthy()
   await page.waitForTimeout(800)
-  const match = line!.match(/frames: \[\[\d+, \d+, (\d+|None)\]\]/)
+  const match = line!.match(/, (\d+|None)\]\]\s*$/)
   return match && match[1] !== 'None' ? Number(match[1]) : null
 }
 
