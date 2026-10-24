@@ -66,15 +66,25 @@ def fit_plane(values: np.ndarray) -> np.ndarray:
     return coefficients[0] + coefficients[1] * ix + coefficients[2] * iy
 
 
-def centring_shifts(vecs, centre_xy, half_width, plane: bool = True):
+def centring_shifts(vecs, centre_xy, half_width, plane: bool = True,
+                    corner_fraction: float | None = None):
     """``(ny, nx, 2)`` — what to add to every vector at each position so the
     beam lands on *centre_xy*; with *plane* the shift is the fitted plane
     everywhere, without it each position keeps its own beam and only the
-    positions with no beam take the plane."""
+    positions with no beam take the plane.
+
+    A *corner_fraction* fits the plane through the four scan-corner blocks
+    only (:func:`spyde.corners.corner_reference`), for a scan whose middle
+    holds a sample that would bias it."""
     beam = beam_per_position(vecs, centre_xy, half_width)
     shift = np.stack([float(centre_xy[0]) - beam[..., 0],
                       float(centre_xy[1]) - beam[..., 1]], axis=-1)
-    fitted = np.stack([fit_plane(shift[..., 0]), fit_plane(shift[..., 1])], axis=-1)
+    if corner_fraction is not None:
+        from spyde.corners import corner_reference
+        fitted = corner_reference(shift, corner_fraction)
+    else:
+        fitted = np.stack([fit_plane(shift[..., 0]), fit_plane(shift[..., 1])],
+                          axis=-1)
     if plane:
         return fitted, beam
     return np.where(np.isfinite(shift), shift, fitted), beam
@@ -99,7 +109,9 @@ def shifted_vectors(vecs, shift):
     return out
 
 
-def center_vectors(vecs, centre_xy, half_width, plane: bool = True):
+def center_vectors(vecs, centre_xy, half_width, plane: bool = True,
+                   corner_fraction: float | None = None):
     """Centre a vectors object. Returns ``(centred, shift, beam)``."""
-    shift, beam = centring_shifts(vecs, centre_xy, half_width, plane=plane)
+    shift, beam = centring_shifts(vecs, centre_xy, half_width, plane=plane,
+                                  corner_fraction=corner_fraction)
     return shifted_vectors(vecs, shift), shift, beam

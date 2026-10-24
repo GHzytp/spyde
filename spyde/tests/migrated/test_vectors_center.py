@@ -125,3 +125,21 @@ class TestTheCaretOnAVectorsWindow:
             assert tree.diffraction_vectors is vecs, "the source tree keeps its vectors"
         finally:
             close_session(session)
+
+
+class TestCornersOnly:
+    def test_the_corner_plane_ignores_the_middle_of_the_scan(self):
+        """On a 4 x 6 scan the 2-px corner floor makes the corners columns
+        0-1 and 4-5; a beam knocked off in columns 2-3 must not move the
+        plane."""
+        from spyde.actions.vectors_center import centring_shifts
+        from spyde.signals.diffraction_vectors import COL_NAV_X
+        vecs, truth = _vectors()
+        middle = np.isin(vecs.flat_buffer[:, COL_NAV_X], (2, 3))
+        bright = vecs.flat_buffer[:, COL_INTENSITY] == 100.0
+        vecs.flat_buffer[middle & bright, COL_KX] += 2.0
+        whole_scan, _beam = centring_shifts(vecs, (0.0, 0.0), 4.0, plane=True)
+        corners, _beam = centring_shifts(vecs, (0.0, 0.0), 4.0, plane=True,
+                                         corner_fraction=0.05)
+        assert np.abs(whole_scan + truth).max() > 0.5
+        assert np.allclose(corners, -truth, atol=1e-4)

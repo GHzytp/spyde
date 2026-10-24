@@ -1,8 +1,10 @@
 /**
  * CenterZeroBeamWizard.tsx — the Center-Zero-Beam caret (Qt two-tab parity).
  *
- *   Automatic — pick a method (+ optional centred half-width window + linear
- *               flat-field) → "Center" dispatches `czb_run`. The half-width
+ *   Automatic — pick a method (+ optional centered half-width window + a
+ *               plane fit, through the whole scan or the four scan corners
+ *               only) → "Center" dispatches `czb_run`. The Corners plane fit
+ *               shows its four boxes on the navigator, as the DPC caret does. The half-width
  *               window is shown as a DRAGGABLE/resizable rectangle widget on
  *               the DP (czb_set_region); dragging it is the primary input —
  *               its live size is read back into the half-width field via the
@@ -15,12 +17,30 @@
  *               when the caret / Manual tab is left (`czb_close`).
  */
 import React from 'react'
-import { WizardShell, TabRow, Field, NumInput, Check, S } from './WizardShell'
+import { WizardShell, TabRow, Field, NumInput, Select, Slider, S } from './WizardShell'
 import { useWizardLifecycle, useWizardEvent } from './wizardHooks'
 import { useSpyDE } from '../kernel/SpyDEContext'
 
 const TABS = ['Automatic', 'Manual'] as const
 type Tab = typeof TABS[number]
+
+type PlaneFit = 'none' | 'whole_scan' | 'corners'
+
+/** `center_zero_beam.PLANE_FITS`; the Corners wording is the DPC caret's. */
+const PLANE_FIT_OPTIONS: readonly { value: PlaneFit; label: string }[] = [
+  { value: 'none', label: 'None (per pattern)' },
+  { value: 'whole_scan', label: 'Whole scan' },
+  { value: 'corners', label: 'Corners (plane through 4 boxes)' },
+]
+
+/** Mirrors `center_zero_beam.DEFAULTS` — this caret's values win silently, so
+ *  `test_action_conformance` parses this literal against the Python. */
+const DEFAULTS = {
+  method: 'center_of_mass',
+  halfSquareWidth: 0,
+  planeFit: 'none',
+  cornerFraction: 0.05,
+}
 
 interface Props {
   caretPos: React.CSSProperties
@@ -32,9 +52,10 @@ interface Props {
 export function CenterZeroBeamWizard({ caretPos, windowId, sendAction, onClose }: Props) {
   const { state } = useSpyDE()
   const [tab, setTab] = React.useState<Tab>('Automatic')
-  const [method, setMethod] = React.useState('center_of_mass')
-  const [halfWidth, setHalfWidth] = React.useState(0)
-  const [flat, setFlat] = React.useState(false)
+  const [method, setMethod] = React.useState(DEFAULTS.method)
+  const [halfWidth, setHalfWidth] = React.useState(DEFAULTS.halfSquareWidth)
+  const [planeFit, setPlaneFit] = React.useState<PlaneFit>(DEFAULTS.planeFit as PlaneFit)
+  const [cornerFraction, setCornerFraction] = React.useState(DEFAULTS.cornerFraction)
   const [status, setStatus] = React.useState('Center the direct beam automatically or by hand.')
 
   // The live figId for this window's DP — spyde:figure_event carries {figId,
@@ -71,15 +92,19 @@ export function CenterZeroBeamWizard({ caretPos, windowId, sendAction, onClose }
   React.useEffect(() => {
     if (tab !== 'Automatic') return
     const t = setTimeout(() => {
-      sendAction('czb_set_region', { half_square_width: halfWidth }, windowId)
+      sendAction('czb_set_region', {
+        half_square_width: halfWidth, plane_fit: planeFit, corner_fraction: cornerFraction,
+      }, windowId)
     }, 0)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, halfWidth])
+  }, [tab, halfWidth, planeFit, cornerFraction])
 
   const center = () => {
     setStatus('Centering…')
-    sendAction('czb_run', { method, half_square_width: halfWidth, make_flat_field: flat }, windowId)
+    sendAction('czb_run', {
+      method, half_square_width: halfWidth, plane_fit: planeFit, corner_fraction: cornerFraction,
+    }, windowId)
   }
   const apply = () => {
     setStatus('Applying manual center…')
@@ -102,7 +127,21 @@ export function CenterZeroBeamWizard({ caretPos, windowId, sendAction, onClose }
           <Field label="Half-width (px)">
             <NumInput testid="czb-halfwidth" value={halfWidth} onChange={setHalfWidth} step="1" />
           </Field>
-          <Check testid="czb-flatfield" checked={flat} onChange={setFlat} label="Linear flat field" />
+          <Field label="Plane fit">
+            <Select testid="czb-plane-fit" value={planeFit}
+              options={PLANE_FIT_OPTIONS} onChange={(v) => {
+                setPlaneFit(v)
+                if (v === 'corners') setStatus('The four boxes on the navigator are what the plane is fitted to.')
+              }} />
+          </Field>
+          {planeFit === 'corners' && (
+            <Field label="Box size">
+              <Slider testid="czb-corner-fraction" value={cornerFraction}
+                min={0.01} max={0.45} step={0.01}
+                fmt={(n) => `${Math.round(n * 100)}%`}
+                onChange={setCornerFraction} />
+            </Field>
+          )}
           <button data-testid="czb-center" style={S.primary} onClick={center}>Center</button>
         </div>
       )}

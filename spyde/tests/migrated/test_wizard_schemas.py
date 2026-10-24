@@ -86,7 +86,7 @@ class TestSchemaBackendLockstep:
     def test_czb_defaults(self):
         from spyde.actions import center_zero_beam as czb
         schema = registry.wizard_parameters("czb")
-        for k in ("method", "half_square_width", "make_flat_field"):
+        for k in ("method", "half_square_width", "plane_fit", "corner_fraction"):
             assert schema[k]["default"] == czb.DEFAULTS[k], \
                 f"czb schema/{k} drifted from center_zero_beam.DEFAULTS"
 

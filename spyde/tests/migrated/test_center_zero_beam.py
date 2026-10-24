@@ -10,8 +10,10 @@ Center Zero Beam (Electron, two-tab parity).
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import numpy as np
+import pytest
 import hyperspy.api as hs
 from spyde.tests.migrated.conftest import _settle, close_session, make_session
 from spyde.tests.migrated._async import wait_until
@@ -284,3 +286,189 @@ class TestCenterZeroBeam:
             assert getattr(tree, "_czb_cross", None) is None
         finally:
             close_session(session)
+
+
+# ── Corners only: the descan plane from the four scan corners ───────────────
+
+#: The scan's descan ramp, as pyxem's ``center − beam`` shift in pixels:
+#: ``(offset, per column, per row)`` for x and for y.
+_DESCAN_X = (1.0, 0.12, -0.08)
+_DESCAN_Y = (-0.5, 0.05, 0.10)
+
+
+def _gaussian(xx, yy, x, y, sigma=2.0):
+    return np.exp(-((xx - x) ** 2 + (yy - y) ** 2) / (2.0 * sigma ** 2))
+
+
+def _descan_with_sample(nav=24, sig=48, sample=True):
+    """A scan whose direct beam follows a known linear descan, with a sample
+    across the MIDDLE of the scan that the four corners never see.
+
+    The sample is a second, weaker spot 12 px to the right of the beam. It
+    drags a whole-pattern center of mass ~4.5 px off the beam wherever it is
+    present, so any fit that includes the middle of the scan is biased, while
+    the corners (15 % boxes here) are clean vacuum.
+    """
+    yy, xx = np.mgrid[0:sig, 0:sig].astype(np.float64)
+    iy, ix = np.mgrid[0:nav, 0:nav].astype(np.float64)
+    shift_x = _DESCAN_X[0] + _DESCAN_X[1] * ix + _DESCAN_X[2] * iy
+    shift_y = _DESCAN_Y[0] + _DESCAN_Y[1] * ix + _DESCAN_Y[2] * iy
+    data = np.zeros((nav, nav, sig, sig), dtype=np.float32)
+    for row in range(nav):
+        for column in range(nav):
+            beam_x = sig / 2.0 - shift_x[row, column]
+            beam_y = sig / 2.0 - shift_y[row, column]
+            frame = 100.0 * _gaussian(xx, yy, beam_x, beam_y)
+            if sample and 6 <= row < 18 and 6 <= column < 18:
+                frame += 60.0 * _gaussian(xx, yy, beam_x + 12.0, beam_y)
+            data[row, column] = frame
+    signal = hs.signals.Signal2D(data)
+    signal.set_signal_type("electron_diffraction")
+    return signal, np.stack([shift_x, shift_y], axis=-1)
+
+
+def _beam_position(frame, around, radius=6):
+    """Center of mass of *frame* inside a disc of *radius* around *around* —
+    the beam alone, without the sample spot 12 px away."""
+    frame = np.asarray(frame, dtype=np.float64)
+    yy, xx = np.mgrid[0:frame.shape[0], 0:frame.shape[1]]
+    inside = (xx - around[0]) ** 2 + (yy - around[1]) ** 2 <= radius ** 2
+    weights = np.where(inside, frame, 0.0)
+    total = weights.sum()
+    return (xx * weights).sum() / total, (yy * weights).sum() / total
+
+
+def _frame(signal, column, row):
+    frame = signal.inav[column, row].data
+    return frame.compute() if hasattr(frame, "compute") else frame
+
+
+class TestCornersOnly:
+    """The Automatic tab can fit the descan plane through the four scan
+    corners only, the way the DPC Center tab's Corners reference does."""
+
+    def test_the_corner_reference_ignores_the_sample(self):
+        from spyde.actions.dpc import measure_corner_reference
+        signal, truth = _descan_with_sample()
+        reference = measure_corner_reference(
+            signal, method="center_of_mass", corner_fraction=0.15)
+        assert reference.shape == truth.shape
+        assert np.abs(reference - truth).max() < 0.05
+
+    def test_the_whole_scan_plane_is_biased_by_the_same_sample(self):
+        """The control: the case the corners option exists for really is one
+        the whole-scan plane gets wrong."""
+        from spyde.actions.dpc import measure_beam_shifts, plane_through
+        signal, truth = _descan_with_sample()
+        whole_scan = plane_through(
+            measure_beam_shifts(signal, method="center_of_mass"), None)
+        assert np.abs(whole_scan - truth).max() > 1.0
+
+    def _centered(self, plane_fit):
+        from spyde.actions.center_zero_beam import czb_run
+        session = make_session()
+        try:
+            signal, _truth = _descan_with_sample()
+            session._add_signal(signal)
+            _settle(session)
+            src = _signal_plot(session)
+            before = src.plot_state.current_signal
+            czb_run(session, src, {"method": "center_of_mass",
+                                   "plane_fit": plane_fit,
+                                   "corner_fraction": 0.15})
+            assert _wait(lambda: src.plot_state.current_signal is not before,
+                         timeout=30), "centering never produced a new signal"
+            centered = src.plot_state.current_signal
+            node = session.signal_trees[0].get_node(before)
+            names = list(node.children)
+            return ({(column, row): _frame(centered, column, row)
+                     for column in (0, 12, 23) for row in (0, 12, 23)}, names)
+        finally:
+            close_session(session)
+
+    def test_corners_put_the_beam_on_the_pattern_center_everywhere(self):
+        frames, names = self._centered("corners")
+        assert any("Centered" in name for name in names)
+        for key, frame in frames.items():
+            position = _beam_position(frame, (24, 24))
+            assert np.hypot(position[0] - 24, position[1] - 24) < 0.3, (key, position)
+
+    def test_the_whole_scan_plane_leaves_the_beam_off_center(self):
+        """The control on the full path: the sample pulls the whole-scan plane
+        (and so every centered pattern) more than a pixel off."""
+        frames, _names = self._centered("whole_scan")
+        worst = max(np.hypot(*(np.subtract(_beam_position(frame, (24, 24)), 24)))
+                    for frame in frames.values())
+        assert worst > 1.0
+
+    def test_corners_need_a_two_dimensional_scan(self, monkeypatch):
+        from spyde.actions import center_zero_beam
+        from spyde.actions.center_zero_beam import czb_run
+        errors = []
+        monkeypatch.setattr(center_zero_beam, "emit_error", errors.append)
+        session = make_session()
+        try:
+            data = np.zeros((5, 16, 16), dtype=np.float32)
+            data[:, 8, 8] = 1.0
+            session._add_signal(hs.signals.Signal2D(data))
+            _settle(session)
+            src = _signal_plot(session)
+            czb_run(session, src, {"method": "center_of_mass",
+                                   "plane_fit": "corners"})
+            assert _wait(lambda: bool(errors), timeout=10)
+            assert "2-D scan" in errors[0]
+        finally:
+            close_session(session)
+
+    def test_the_corner_boxes_show_on_the_navigator(self):
+        from spyde.actions.center_zero_beam import czb_close, czb_set_region
+        session = make_session()
+        try:
+            signal, _truth = _descan_with_sample()
+            session._add_signal(signal)
+            _settle(session)
+            src = _signal_plot(session)
+            tree = src.signal_tree
+
+            czb_set_region(session, src, {"half_square_width": 0,
+                                          "plane_fit": "corners",
+                                          "corner_fraction": 0.15})
+            boxes = getattr(tree, "_czb_corner_mg", None)
+            assert boxes is not None, "no corner boxes on the navigator"
+            czb_set_region(session, src, {"half_square_width": 0,
+                                          "plane_fit": "corners",
+                                          "corner_fraction": 0.25})
+            assert tree._czb_corner_mg is boxes, "a resize must not rebuild them"
+            czb_set_region(session, src, {"half_square_width": 0,
+                                          "plane_fit": "none"})
+            assert getattr(tree, "_czb_corner_mg", None) is None
+            czb_set_region(session, src, {"half_square_width": 0,
+                                          "plane_fit": "corners",
+                                          "corner_fraction": 0.15})
+            czb_close(session, src, {})
+            assert getattr(tree, "_czb_corner_mg", None) is None
+        finally:
+            close_session(session)
+
+
+_CARET = (Path(__file__).resolve().parents[3] / "electron" / "src" / "renderer"
+          / "src" / "components" / "CenterZeroBeamWizard.tsx")
+
+
+class TestCornersOnTheCaret:
+    """The option is declared once, in the backend schema, and offered by the
+    caret with the DPC Center tab's wording."""
+
+    def test_the_schema_offers_corners(self):
+        from spyde.actions import registry
+        from spyde.corners import DEFAULT_CORNER_FRACTION
+        schema = registry.wizard_parameters("czb")
+        assert schema["plane_fit"]["choices"] == ["none", "whole_scan", "corners"]
+        assert schema["corner_fraction"]["default"] == DEFAULT_CORNER_FRACTION
+
+    @pytest.mark.skipif(not _CARET.exists(), reason="renderer sources not present")
+    def test_the_caret_sends_the_plane_fit_and_box_size(self):
+        text = _CARET.read_text(encoding="utf-8")
+        assert "'corners'" in text
+        assert "Corners (plane through 4 boxes)" in text
+        assert "plane_fit:" in text and "corner_fraction:" in text
