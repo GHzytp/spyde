@@ -1,1 +1,0 @@
-After binning or cropping the scan, the navigator crosshair showed the pattern from a different position (binned by 2, everything past half the scan width showed the last column); it now shows the binned or cropped pattern under the crosshair.
