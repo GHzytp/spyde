@@ -1,1 +1,0 @@
-The Rebin fields now read Scan X, Scan Y, Diffraction X, Diffraction Y, in that order; the diffraction factors used to come first, so values typed in by position land on different axes than before.

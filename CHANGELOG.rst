@@ -12,6 +12,31 @@ Earlier releases are described by their GitHub release notes and tags.
 
 .. towncrier release notes start
 
+0.6.0-rc.4 (2026-10-26)
+=======================
+
+API and Behaviour Changes
+-------------------------
+
+- The Rebin fields now read Scan X, Scan Y, Diffraction X, Diffraction Y, in that order; the diffraction factors used to come first, so values typed in by position land on different axes than before. (`#250 <https://github.com/directelectron/spyde/pull/250>`_)
+
+
+New Features
+------------
+
+- Center Zero Beam can now fit the descan plane through the four corners of the scan only, the same corner boxes the DPC Center tab uses, so a sample in the middle of the scan no longer pulls the centering off. (`#249 <https://github.com/directelectron/spyde/pull/249>`_)
+- The Rebin fields are now split by a separator: Scan X  Scan Y | Diffraction X  Diffraction Y. (`#252 <https://github.com/directelectron/spyde/pull/252>`_)
+
+
+Bug Fixes
+---------
+
+- The strain window's rotation arrows on the reference pattern no longer sometimes sit as a speck in the pattern's corner; they are centred on the pattern from the moment the window opens. (`#248 <https://github.com/directelectron/spyde/pull/248>`_)
+- After binning or cropping the scan, the navigator crosshair showed the pattern from a different position (binned by 2, everything past half the scan width showed the last column); it now shows the binned or cropped pattern under the crosshair. (`#250 <https://github.com/directelectron/spyde/pull/250>`_)
+- Orientation-mapping libraries built from hexagonal, trigonal and monoclinic CIFs (barium titanate, GaN, ZnO, sapphire and Ti from COD among them) now use the atom positions in the file, so they keep their space group, and a library too large for the free memory is built at a coarser zone-axis step and says so, where it used to report 0 orientations. (`#251 <https://github.com/directelectron/spyde/pull/251>`_)
+- With a binned or cropped node selected, Plot Control showed the original dataset's size and axis calibration; it now describes the selected node, and an axis edited there is applied consistently to every node of the dataset. (`#252 <https://github.com/directelectron/spyde/pull/252>`_)
+
+
 0.6.0-rc.3 (2026-10-20)
 =======================
 
